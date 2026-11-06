@@ -24,6 +24,9 @@ export interface Tenant {
   hostEmail: string;
   fromEmail: string;
   publicBaseUrl: string;
+  // Client-facing pages on the business's own site that embed the booking and manage views,
+  // so links in emails show the business's address rather than the hosting address.
+  pages?: { book: string; manage: string };
   footer: string[]; // shown verbatim under the booking page
   // Optional opt-in to a mailing list. Unticked by default; only ticked boxes are sent on.
   mailingList?: { label: string; webhookUrl: string; list: string };
@@ -71,6 +74,7 @@ export const TENANTS: Record<string, Tenant> = {
     },
     fromEmail: "admin@alderlux.com",
     publicBaseUrl: "https://book.alderlux.com",
+    pages: { book: "https://alderlux.com/book", manage: "https://alderlux.com/manage" },
     footer: [
       "Alderlux provides education and information only. We do not provide regulated financial advice, investment recommendations, legal or tax advice. Alderlux is not authorised by the Financial Conduct Authority.",
     ],

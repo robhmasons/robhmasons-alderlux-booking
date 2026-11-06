@@ -99,3 +99,13 @@ describe("mailing list opt-in", () => {
     expect(t.mailingList?.label).toContain("Send me free updates");
   });
 });
+
+describe("client-facing links", () => {
+  it("Alderlux links point at alderlux.com pages, never the hosting address", async () => {
+    const { getTenant } = await import("../src/config");
+    const t = getTenant("alderlux")!;
+    expect(t.pages?.book).toBe("https://alderlux.com/book");
+    expect(t.pages?.manage).toBe("https://alderlux.com/manage");
+    expect(JSON.stringify(t.pages)).not.toMatch(/workers\.dev|masons/);
+  });
+});

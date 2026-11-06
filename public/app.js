@@ -1,4 +1,6 @@
 (() => {
+  // Shown inside a page on the business's own site: drop our own header band.
+  if (window.top !== window.self) document.documentElement.classList.add("embedded");
   const $ = (id) => document.getElementById(id);
   const state = { config: null, type: null, from: null, slots: {}, date: null, start: null };
   const visitorTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";

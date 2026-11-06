@@ -29,6 +29,13 @@ export interface Env extends CalendarEnv, OutlookEnv {
   PUBLIC_BASE_URL?: string; // overrides the tenant's public address (e.g. the workers.dev URL)
 }
 
+function manageLink(t: Tenant, tok: string): string {
+  return t.pages ? `${t.pages.manage}?t=${encodeURIComponent(tok)}` : `${t.publicBaseUrl}/manage.html?t=${encodeURIComponent(tok)}`;
+}
+const bookLink = (t: Tenant): string => t.pages?.book ?? t.publicBaseUrl;
+// Calendar UIDs use the business's own domain, never the hosting address.
+const uidHost = (t: Tenant): string => t.fromEmail.split("@")[1];
+
 function tenantFor(slug: string, env: Env): Tenant | undefined {
   const t = getTenant(slug);
   return t && env.PUBLIC_BASE_URL ? { ...t, publicBaseUrl: env.PUBLIC_BASE_URL } : t;
@@ -160,7 +167,7 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   );
   if (!ok) return json({ error: "Sorry, that time has just been taken. Please choose another." }, 409);
 
-  const manageUrl = `${tenant.publicBaseUrl}/manage.html?t=${encodeURIComponent(cancelToken)}`;
+  const manageUrl = manageLink(tenant, cancelToken);
   const answersText = eventType.questions.filter((q) => v.value.answers[q.id]).map((q) => `${q.label} ${v.value.answers[q.id]}`);
 
   // Side effects after the booking is safely stored. A failure here never loses the booking.
@@ -181,7 +188,7 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
         .catch((e) => console.error("calendar insert failed", e)),
     );
   }
-  const icsUid = `${id}@${new URL(tenant.publicBaseUrl).host}`;
+  const icsUid = `${id}@${uidHost(tenant)}`;
   const ics = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name} with ${tenant.name}`, description: `${eventType.description}\n\nManage your booking: ${manageUrl}`, location: eventType.location, organizerEmail: tenant.fromEmail });
   const client = renderEmail({
     headline: "Your call is confirmed",
@@ -223,7 +230,7 @@ async function handleIcs(tokenValue: string, env: Env, tenant: Tenant): Promise<
   const b = await byToken(env.DB, tokenValue);
   if (!b || b.tenant !== tenant.slug) return new Response("Not found", { status: 404 });
   const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
-  const ics = buildIcs({ uid: `${b.id}@${new URL(tenant.publicBaseUrl).host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: et?.description ?? "", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: b.status === "cancelled" ? "CANCELLED" : "CONFIRMED" });
+  const ics = buildIcs({ uid: `${b.id}@${uidHost(tenant)}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: et?.description ?? "", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: b.status === "cancelled" ? "CANCELLED" : "CONFIRMED" });
   return new Response(ics, { headers: { "content-type": "text/calendar; charset=utf-8", "content-disposition": `attachment; filename="alderlux-call.ics"`, "cache-control": "no-store" } });
 }
 
@@ -241,8 +248,8 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
     tasks.push(del.catch((e) => console.error("calendar cancel failed", e)));
   }
   const host = renderEmail({ headline: "Booking cancelled", paragraphs: [`${b.name} (${b.email}) cancelled ${et?.name ?? b.event_type}.`, whenText(b.start_ms, tz)], footer: tenant.footer });
-  const client = renderEmail({ headline: "Your call is cancelled", paragraphs: [`Dear ${b.name},`, `Your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)} has been cancelled. You are welcome to book another time.`], button: { label: "Book another time", url: tenant.publicBaseUrl }, footer: tenant.footer });
-  const cancelIcs = buildIcs({ uid: `${b.id}@${new URL(tenant.publicBaseUrl).host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: "Cancelled", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: "CANCELLED" });
+  const client = renderEmail({ headline: "Your call is cancelled", paragraphs: [`Dear ${b.name},`, `Your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)} has been cancelled. You are welcome to book another time.`], button: { label: "Book another time", url: bookLink(tenant) }, footer: tenant.footer });
+  const cancelIcs = buildIcs({ uid: `${b.id}@${uidHost(tenant)}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: "Cancelled", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: "CANCELLED" });
   tasks.push(
     (async () => {
       await mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client, attachments: [{ filename: "alderlux-call-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("client email failed: " + errText(e)));
@@ -279,7 +286,7 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
   if (!env.ADMIN_KEY || !safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return new Response("Not allowed", { status: 403 });
   const tenant = tenantFor(env.TENANT ?? "alderlux", env)!;
   const rows = await env.DB.prepare("SELECT * FROM bookings WHERE tenant = ? AND status = 'confirmed' AND end_ms > ? ORDER BY start_ms").bind(tenant.slug, Date.now() - 30 * 86400000).all<BookingRow>();
-  const host = new URL(tenant.publicBaseUrl).host;
+  const host = uidHost(tenant);
   const events = (rows.results ?? []).map((b) => {
     const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
     const answers = JSON.parse(b.answers || "{}") as Record<string, string>;
@@ -351,7 +358,7 @@ export async function runReminders(env: Env, now: number): Promise<number> {
     if (!tenant) continue;
     const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
     const tz = tenant.availability.timezone;
-    const msg = renderEmail({ headline: "A reminder of your call", paragraphs: [`Dear ${b.name},`, `This is a reminder of your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)}.`, et?.location ?? ""], button: { label: "Manage your booking", url: `${tenant.publicBaseUrl}/manage.html?t=${encodeURIComponent(b.cancel_token)}` }, footer: tenant.footer });
+    const msg = renderEmail({ headline: "A reminder of your call", paragraphs: [`Dear ${b.name},`, `This is a reminder of your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)}.`, et?.location ?? ""], button: { label: "Manage your booking", url: manageLink(tenant, b.cancel_token) }, footer: tenant.footer });
     try {
       await mail(env, tenant, { to: b.email, subject: `Reminder: ${et?.name ?? "your call"}, ${whenText(b.start_ms, tz)}`, ...msg });
       await markReminded(env.DB, b.id);

@@ -89,7 +89,8 @@ export const TENANTS: Record<string, Tenant> = {
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [
           { id: "goal", label: "What would you most like to understand or be able to do?", type: "textarea" },
-          { id: "held_for", label: "How long have you held Bitcoin?", type: "select", options: ["None yet", "Under 1 year", "1–5 years", "Over 5 years"] },
+          { id: "held_for", label: "How long have you held crypto?", type: "select", options: ["None yet", "Under 1 year", "1–5 years", "Over 5 years"] },
+          { id: "assets", label: "Which crypto do you hold, if any? (for example Bitcoin, XRP, Ethereum)", type: "text" },
           { id: "held_how", label: "How do you hold it now?", type: "select", options: ["Exchange", "My own wallet", "Both", "Not yet"] },
           heardAbout,
         ],
@@ -103,7 +104,7 @@ export const TENANTS: Record<string, Tenant> = {
         questions: [
           { id: "for_whom", label: "Is this for yourself, a family member, or a client?", type: "select", options: ["Myself", "A family member", "A client (I am a professional adviser)"] },
           { id: "solicitor", label: "Is a solicitor involved? If so, which firm?", type: "text" },
-          { id: "held_how", label: "Roughly how is the Bitcoin held?", type: "select", options: ["Exchange", "Own wallet", "Multi-sig", "Mixed", "Not sure"] },
+          { id: "held_how", label: "Roughly how is the crypto held?", type: "select", options: ["Exchange", "Own wallet", "Multi-sig", "Mixed", "Not sure"] },
           heardAbout,
         ],
       },
@@ -115,7 +116,7 @@ export const TENANTS: Record<string, Tenant> = {
         location: "Zoom",
         questions: [
           { id: "company", label: "Company name and your role", type: "text", required: true },
-          { id: "considering", label: "What are you considering?", type: "select", options: ["Treasury", "Accepting Bitcoin", "Board or staff education", "Other"] },
+          { id: "considering", label: "What are you considering?", type: "select", options: ["Treasury", "Accepting crypto payments", "Board or staff education", "Other"] },
           { id: "timescale", label: "Timescale", type: "select", options: ["Exploring", "Immediate", "Next 3 months", "Next 12 months"] },
           heardAbout,
         ],

@@ -7,12 +7,13 @@ import { googleBusy, googleDeleteEvent, googleInsertEvent, type CalendarEnv } fr
 import { connect } from "cloudflare:sockets";
 import { renderEmail, sendEmail, type EmailBinding, type Message } from "./email";
 import type { SmtpConfig } from "./smtp";
+import { STATIC } from "./static.generated";
 import { authorizeUrl, checkState, exchangeCode, makeState, outlookAppConfigured, outlookBusy, outlookConnected, outlookCreateEvent, outlookDeleteEvent, safeEqual, type OutlookEnv } from "./outlook";
 import { buildIcs } from "./ics";
 
 export interface Env extends CalendarEnv, OutlookEnv {
   DB: D1Database;
-  ASSETS: Fetcher;
+  ASSETS?: Fetcher;
   EMAIL?: EmailBinding;
   TENANT?: string; // default tenant slug
   // Outgoing mail from admin@alderlux.com via the domain's mail server (Namecheap Private Email).
@@ -23,6 +24,12 @@ export interface Env extends CalendarEnv, OutlookEnv {
   SMTP_PASS?: string; // secret
   MAIL_FROM?: string;
   MAIL_FROM_NAME?: string;
+  PUBLIC_BASE_URL?: string; // overrides the tenant's public address (e.g. the workers.dev URL)
+}
+
+function tenantFor(slug: string, env: Env): Tenant | undefined {
+  const t = getTenant(slug);
+  return t && env.PUBLIC_BASE_URL ? { ...t, publicBaseUrl: env.PUBLIC_BASE_URL } : t;
 }
 
 function smtpConfig(env: Env, tenant: Tenant): SmtpConfig | undefined {
@@ -200,6 +207,22 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
   return json({ status: "cancelled" });
 }
 
+const SECURITY_HEADERS: Record<string, string> = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "x-frame-options": "SAMEORIGIN",
+  "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' https://api.fontshare.com; font-src https://cdn.fontshare.com https://api.fontshare.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://alderlux.com; base-uri 'self'; form-action 'self'",
+};
+
+/** Serves the embedded booking pages (API deployments without the assets binding). */
+function serveStatic(url: URL): Response {
+  const path = url.pathname === "/" ? "/index.html" : url.pathname;
+  const f = STATIC[path];
+  if (!f) return new Response("Not found", { status: 404, headers: SECURITY_HEADERS });
+  return new Response(f.body, { headers: { "content-type": f.type, "cache-control": "public, max-age=300", ...SECURITY_HEADERS } });
+}
+
 function page(title: string, text: string, status = 200): Response {
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title><body style="font-family:system-ui;background:#0B0B0D;color:#D8D1C3;padding:32px"><h1 style="color:#F7F4EE;font-weight:400">${esc(title)}</h1><p>${esc(text)}</p></body>`, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
@@ -236,7 +259,7 @@ export async function runReminders(env: Env, now: number): Promise<number> {
   const due = await dueReminders(env.DB, now, 24 * 3600 * 1000);
   let sent = 0;
   for (const b of due) {
-    const tenant = getTenant(b.tenant);
+    const tenant = tenantFor(b.tenant, env);
     if (!tenant) continue;
     const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
     const tz = tenant.availability.timezone;
@@ -255,9 +278,9 @@ export async function runReminders(env: Env, now: number): Promise<number> {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
-    const tenant = getTenant(url.searchParams.get("tenant") ?? env.TENANT ?? "alderlux");
+    const tenant = tenantFor(url.searchParams.get("tenant") ?? env.TENANT ?? "alderlux", env);
     if (url.pathname.startsWith("/oauth/outlook/")) return handleOutlookOAuth(url, env);
-    if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
+    if (!url.pathname.startsWith("/api/")) return env.ASSETS ? env.ASSETS.fetch(req) : serveStatic(url);
     if (!tenant) return json({ error: "Unknown business." }, 404);
     const now = Date.now();
     try {

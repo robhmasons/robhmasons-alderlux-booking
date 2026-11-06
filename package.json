@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local",
+    "dev": "node scripts/embed-assets.mjs && wrangler dev --local",
+    "build": "node scripts/embed-assets.mjs && wrangler deploy --dry-run --outdir dist --minify",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:migrate:local": "wrangler d1 migrations apply alderlux-booking --local",

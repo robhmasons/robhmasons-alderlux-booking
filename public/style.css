@@ -66,6 +66,7 @@ form label.check[hidden] { display: none; }
 form label.check input { width: 18px; height: 18px; margin: 2px 0 0; padding: 0; flex: none; accent-color: var(--alx-gold); }
 .embedded .band { display: none; }
 .embedded main { padding-top: 20px; }
+.embedded body { overflow: hidden; }
 .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .primary {
   display: inline-block; background: var(--alx-gold); color: var(--alx-ground); border: 0; padding: 16px 32px;
@@ -77,3 +78,14 @@ form label.check input { width: 18px; height: 18px; margin: 2px 0 0; padding: 0;
 .foot hr { border: 0; border-top: 1px solid var(--alx-hairline); }
 .foot { padding-bottom: 32px; }
 @media (prefers-reduced-motion: no-preference) { .card, .time, .day { transition: border-color .15s, background .15s; } }
+@media (max-width: 520px) {
+  main { padding-top: 20px; }
+  .wrap { padding: 0 12px; }
+  .days { gap: 6px; margin: 12px 0; }
+  .day { min-width: 56px; padding: 8px 4px; font-size: 12px; }
+  .day b { font-size: 16px; }
+  .times { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .time { padding: 10px 0; font-size: 15px; }
+  .card { padding: 14px 16px; }
+  h1 { margin-bottom: 14px; }
+}

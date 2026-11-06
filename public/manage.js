@@ -1,6 +1,11 @@
 (() => {
   // Shown inside a page on the business's own site: drop our own header band.
-  if (window.top !== window.self) document.documentElement.classList.add("embedded");
+  const embedded = window.top !== window.self;
+  if (embedded) document.documentElement.classList.add("embedded");
+  // Tell the host page our height so its frame fits the content (no scrolling box on phones).
+  const tellHeight = () => { if (embedded) parent.postMessage({ alxBooking: "height", h: Math.ceil(document.documentElement.scrollHeight) }, "*"); };
+  if (embedded && "ResizeObserver" in window) new ResizeObserver(tellHeight).observe(document.body);
+  window.addEventListener("load", tellHeight);
   const $ = (id) => document.getElementById(id);
   const t = new URLSearchParams(location.search).get("t") || "";
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";

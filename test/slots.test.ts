@@ -90,9 +90,16 @@ describe("slot generation", () => {
 
 describe("Alderlux configuration", () => {
   const t = TENANTS.alderlux;
-  it("matches the Calendly working hours copied on 06/11/2026", () => {
-    expect(t.availability.weekly.tuesday).toEqual([{ from: "06:15", to: "07:00" }, { from: "09:30", to: "13:00" }, { from: "20:00", to: "23:45" }]);
-    expect(t.availability.dateOverrides?.["2026-12-05"]).toHaveLength(2);
+  it("respects Robert's unavailability rules (06/11/2026)", () => {
+    const mins = (x: string) => +x.slice(0, 2) * 60 + +x.slice(3);
+    expect(t.availability.weekly.saturday).toEqual([]);
+    for (const iv of t.availability.weekly.sunday) expect(mins(iv.from) >= mins("20:00") || mins(iv.to) <= mins("09:00")).toBe(true);
+    for (const d of ["monday", "tuesday", "wednesday", "thursday", "friday"]) {
+      for (const iv of t.availability.weekly[d]) {
+        expect(mins(iv.from)).toBeGreaterThanOrEqual(mins("05:00"));
+        expect(mins(iv.to) <= mins("14:00") || mins(iv.from) >= mins("20:00")).toBe(true);
+      }
+    }
   });
 
   it("a 60-minute call never fits the 45-minute early window", () => {

@@ -38,21 +38,20 @@ const heardAbout: Question = {
   required: true,
 };
 
-// Working hours copied from the live Calendly "Working hours" schedule on 06/11/2026.
+// Working hours: copied from Calendly on 06/11/2026, then restricted by Robert on 06/11/2026:
+// never Saturdays; never Sundays 09:00-20:00; never weekdays 00:00-05:00 or 14:00-20:00.
 const alderluxAvailability: Availability = {
   timezone: "Europe/London",
   weekly: {
-    sunday: [{ from: "10:30", to: "23:45" }],
+    sunday: [{ from: "20:00", to: "23:45" }],
     monday: [{ from: "06:15", to: "07:00" }, { from: "12:30", to: "14:00" }, { from: "20:00", to: "23:45" }],
     tuesday: [{ from: "06:15", to: "07:00" }, { from: "09:30", to: "13:00" }, { from: "20:00", to: "23:45" }],
     wednesday: [{ from: "06:15", to: "07:00" }, { from: "09:30", to: "13:00" }, { from: "20:00", to: "23:45" }],
     thursday: [{ from: "06:15", to: "07:00" }, { from: "12:30", to: "14:00" }, { from: "20:00", to: "23:45" }],
     friday: [{ from: "06:15", to: "07:00" }, { from: "09:30", to: "13:00" }, { from: "20:00", to: "23:45" }],
-    saturday: [{ from: "06:00", to: "07:00" }, { from: "09:00", to: "13:00" }, { from: "20:00", to: "23:45" }],
+    saturday: [],
   },
-  dateOverrides: {
-    "2026-12-05": [{ from: "06:00", to: "07:00" }, { from: "09:00", to: "13:00" }],
-  },
+  dateOverrides: {},
 };
 
 export const TENANTS: Record<string, Tenant> = {

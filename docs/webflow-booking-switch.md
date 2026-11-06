@@ -5,7 +5,7 @@ Robert makes both edits in Webflow, checks the staging site, then publishes.
 
 ## What uses Calendly today (checked on the live site, 63 pages)
 
-1. **Every page**: Site settings → Custom code → Footer has a script that opens a Calendly
+1. **Every page** (checked on staging 06/11/2026: no element has the class `book-call`; every "Book a call" button links to /alderluxcontact, so the contact page calendar is the only booking route): Site settings → Custom code → Footer has a script that opens a Calendly
    pop-up (the-edge-introductory-call-clone) when any element with the class `book-call` is clicked.
 2. **Contact page** (/alderluxcontact): an Embed element in "Option One — Book A Free Consultation"
    holds an inline Calendly calendar.
@@ -51,8 +51,8 @@ with:
 <iframe src='https://alderlux-booking.rob-h-masons.workers.dev/?type=the-edge' title='Book a free consultation' loading='lazy' style='width:100%;min-width:320px;height:760px;border:0;'></iframe><p style='margin-top:12px'><a href='https://alderlux-booking.rob-h-masons.workers.dev/?type=the-edge'>Open the booking page in a new window</a></p>
 ```
 
-The booking page allows being shown inside alderlux.com (its frame-ancestors rule names
-https://alderlux.com). It cannot be tested from inside alderlux.com until it is on staging,
+The booking page allows being shown inside alderlux.com, www.alderlux.com and the staging site
+alderlux-19fc8e.webflow.io (frame-ancestors, updated 06/11/2026; tested working on staging). It cannot be tested from inside alderlux.com until it is on staging,
 so check it there; the link underneath is the fallback if the frame shows blank.
 
 ## Check before publishing (on the webflow.io staging site)

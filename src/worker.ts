@@ -249,7 +249,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "referrer-policy": "strict-origin-when-cross-origin",
   "x-frame-options": "SAMEORIGIN",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
-  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' https://api.fontshare.com; font-src https://cdn.fontshare.com https://api.fontshare.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://alderlux.com; base-uri 'self'; form-action 'self'",
+  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' https://api.fontshare.com; font-src https://cdn.fontshare.com https://api.fontshare.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://alderlux.com https://www.alderlux.com https://alderlux-19fc8e.webflow.io; base-uri 'self'; form-action 'self'",
 };
 
 /** Serves the embedded booking pages (API deployments without the assets binding). */

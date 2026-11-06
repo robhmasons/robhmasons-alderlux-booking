@@ -3,4 +3,4 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: SAMEORIGIN
   Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://api.fontshare.com; font-src https://cdn.fontshare.com https://api.fontshare.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://alderlux.com; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://api.fontshare.com; font-src https://cdn.fontshare.com https://api.fontshare.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self' https://alderlux.com https://www.alderlux.com https://alderlux-19fc8e.webflow.io; base-uri 'self'; form-action 'self'

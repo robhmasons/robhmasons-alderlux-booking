@@ -54,3 +54,13 @@ export function buildIcs(b: {
   ];
   return lines.map(fold).join("\r\n") + "\r\n";
 }
+
+/** A whole calendar of bookings, for Robert to subscribe to in Outlook ("Subscribe from web"). */
+export function buildFeed(name: string, events: { uid: string; start: number; end: number; summary: string; description: string; location: string }[], now = Date.now()): string {
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Alderlux//Booking//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", `X-WR-CALNAME:${escapeText(name)}`, "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H"];
+  for (const e of events) {
+    lines.push("BEGIN:VEVENT", `UID:${e.uid}`, `DTSTAMP:${stamp(now)}`, `DTSTART:${stamp(e.start)}`, `DTEND:${stamp(e.end)}`, `SUMMARY:${escapeText(e.summary)}`, `DESCRIPTION:${escapeText(e.description)}`, `LOCATION:${escapeText(e.location)}`, "STATUS:CONFIRMED", "TRANSP:OPAQUE", "END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return lines.map(fold).join("\r\n") + "\r\n";
+}

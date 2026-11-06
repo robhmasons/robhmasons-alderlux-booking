@@ -2,14 +2,15 @@ import { getTenant, type EventType, type Tenant } from "./config";
 import { availableSlots, isBookable, type Busy } from "./slots";
 import { addDays, isIsoDate, localDate, localParts } from "./time";
 import { validateBooking } from "./validate";
-import { bookedBusy, byToken, cancelByToken, dueReminders, insertIfFree, markReminded, setCalendarEventId } from "./db";
+import { type BookingRow, bookedBusy, byToken, cancelByToken, dueReminders, insertIfFree, markReminded, setCalendarEventId } from "./db";
 import { googleBusy, googleDeleteEvent, googleInsertEvent, type CalendarEnv } from "./calendar";
 import { connect } from "cloudflare:sockets";
 import { renderEmail, sendEmail, type EmailBinding, type Message } from "./email";
 import type { SmtpConfig } from "./smtp";
 import { STATIC } from "./static.generated";
 import { authorizeUrl, checkState, exchangeCode, makeState, outlookAppConfigured, outlookBusy, outlookConnected, outlookCreateEvent, outlookDeleteEvent, safeEqual, type OutlookEnv } from "./outlook";
-import { buildIcs } from "./ics";
+import { buildFeed, buildIcs } from "./ics";
+import { cachedIcsBusy, refreshIcsBusy } from "./ics-busy";
 
 export interface Env extends CalendarEnv, OutlookEnv {
   DB: D1Database;
@@ -24,6 +25,7 @@ export interface Env extends CalendarEnv, OutlookEnv {
   SMTP_PASS?: string; // secret
   MAIL_FROM?: string;
   MAIL_FROM_NAME?: string;
+  OUTLOOK_ICS_URL?: string; // secret: Outlook "Publish calendar" .ics link (busy times only)
   PUBLIC_BASE_URL?: string; // overrides the tenant's public address (e.g. the workers.dev URL)
 }
 
@@ -71,15 +73,35 @@ function whenText(ms: number, tz: string): string {
   return new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }).format(new Date(ms));
 }
 
-/** All busy periods for a window: confirmed bookings plus the host's calendar, if connected. */
+const UNAVAILABLE = () => new Response(JSON.stringify({ error: "Availability is temporarily unavailable. Please try again shortly." }), { status: 503, headers: JSON_HEADERS });
+
+/** Busy periods from Robert's calendar: the published Outlook link (cached), or a connected calendar. */
+async function calendarBusy(env: Env, from: number, to: number): Promise<Busy[]> {
+  if (env.OUTLOOK_ICS_URL) {
+    const now = Date.now();
+    let cache = await cachedIcsBusy(env.DB, now);
+    if (!cache) {
+      try {
+        await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, now);
+        cache = await cachedIcsBusy(env.DB, now);
+      } catch (e) {
+        console.error("calendar link refresh failed: " + errText(e));
+      }
+    }
+    if (!cache) throw UNAVAILABLE(); // never offer times we can't check
+    return cache.busy.filter((b) => b.start < to && b.end > from);
+  }
+  try {
+    return (await outlookConnected(env)) ? await outlookBusy(env, from, to) : await googleBusy(env, from, to);
+  } catch (e) {
+    console.error("calendar busy lookup failed: " + errText(e));
+    throw UNAVAILABLE();
+  }
+}
+
+/** All busy periods for a window: confirmed bookings plus Robert's calendar. */
 async function busyFor(env: Env, tenant: Tenant, from: number, to: number): Promise<Busy[]> {
-  const [own, cal] = await Promise.all([
-    bookedBusy(env.DB, tenant.slug, from, to),
-    (async () => ((await outlookConnected(env)) ? outlookBusy(env, from, to) : googleBusy(env, from, to)))().catch((e) => {
-      console.error("calendar busy lookup failed", e);
-      throw new Response(JSON.stringify({ error: "Availability is temporarily unavailable. Please try again shortly." }), { status: 503, headers: JSON_HEADERS });
-    }),
-  ]);
+  const [own, cal] = await Promise.all([bookedBusy(env.DB, tenant.slug, from, to), calendarBusy(env, from, to)]);
   return [...own, ...cal];
 }
 
@@ -172,7 +194,8 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   tasks.push(
     (async () => {
       await mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client, attachments: [{ filename: "alderlux-call.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: ics }] }).catch((e) => console.error("client email failed: " + errText(e)));
-      await mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host }).catch((e) => console.error("host email failed: " + errText(e)));
+      const hostIcs = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name}: ${v.value.name}`, description: [...detailLines, "", `Manage: ${manageUrl}`].join("\n"), location: eventType.location, organizerEmail: tenant.fromEmail });
+      await mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host, attachments: [{ filename: "booking.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: hostIcs }] }).catch((e) => console.error("host email failed: " + errText(e)));
     })(),
   );
   await Promise.all(tasks);
@@ -214,7 +237,7 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
   tasks.push(
     (async () => {
       await mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client, attachments: [{ filename: "alderlux-call-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("client email failed: " + errText(e)));
-      await mail(env, tenant, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host }).catch((e) => console.error("host email failed: " + errText(e)));
+      await mail(env, tenant, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host, attachments: [{ filename: "booking-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("host email failed: " + errText(e)));
     })(),
   );
   await Promise.all(tasks);
@@ -240,6 +263,35 @@ function serveStatic(url: URL): Response {
 function page(title: string, text: string, status = 200): Response {
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title><body style="font-family:system-ui;background:#0B0B0D;color:#D8D1C3;padding:32px"><h1 style="color:#F7F4EE;font-weight:400">${esc(title)}</h1><p>${esc(text)}</p></body>`, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+/** Private feed of confirmed bookings for Robert's Outlook ("Add calendar" > "Subscribe from web"). */
+async function handleFeed(url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_KEY || !safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return new Response("Not allowed", { status: 403 });
+  const tenant = tenantFor(env.TENANT ?? "alderlux", env)!;
+  const rows = await env.DB.prepare("SELECT * FROM bookings WHERE tenant = ? AND status = 'confirmed' AND end_ms > ? ORDER BY start_ms").bind(tenant.slug, Date.now() - 30 * 86400000).all<BookingRow>();
+  const host = new URL(tenant.publicBaseUrl).host;
+  const events = (rows.results ?? []).map((b) => {
+    const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
+    const answers = JSON.parse(b.answers || "{}") as Record<string, string>;
+    const lines = [`Email: ${b.email}`, ...(et?.questions ?? []).filter((q) => answers[q.id]).map((q) => `${q.label} ${answers[q.id]}`)];
+    return { uid: `${b.id}@${host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? b.event_type}: ${b.name}`, description: lines.join("\n"), location: et?.location ?? "" };
+  });
+  return new Response(buildFeed(`${tenant.name} bookings`, events), { headers: { "content-type": "text/calendar; charset=utf-8", "cache-control": "no-store" } });
+}
+
+async function handleCalendarStatus(url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_KEY || !safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return json({ error: "Not allowed." }, 403);
+  if (!env.OUTLOOK_ICS_URL) return json({ calendarLink: "not set" });
+  const now = Date.now();
+  try {
+    const count = await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, now);
+    const cache = await cachedIcsBusy(env.DB, now);
+    const next = (cache?.busy ?? []).filter((b) => b.end > now).slice(0, 10).map((b) => ({ start: new Date(b.start).toISOString(), end: new Date(b.end).toISOString() }));
+    return json({ calendarLink: "ok", busyPeriodsNext75Days: count, next10: next });
+  } catch (e) {
+    return json({ calendarLink: "error", error: errText(e) });
+  }
 }
 
 /** Sends one test email to the host address and shows the mail server conversation (password redacted). */
@@ -308,6 +360,8 @@ export default {
     const tenant = tenantFor(url.searchParams.get("tenant") ?? env.TENANT ?? "alderlux", env);
     if (url.pathname.startsWith("/oauth/outlook/")) return handleOutlookOAuth(url, env);
     if (url.pathname === "/admin/test-email") return handleTestEmail(url, env);
+    if (url.pathname === "/admin/calendar-status") return handleCalendarStatus(url, env);
+    if (url.pathname === "/calendar.ics") return handleFeed(url, env);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS ? env.ASSETS.fetch(req) : serveStatic(url);
     if (!tenant) return json({ error: "Unknown business." }, 404);
     const now = Date.now();
@@ -332,6 +386,7 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    if (env.OUTLOOK_ICS_URL) await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, Date.now()).catch((e) => console.error("calendar link refresh failed: " + errText(e)));
     await runReminders(env, Date.now());
   },
 } satisfies ExportedHandler<Env>;

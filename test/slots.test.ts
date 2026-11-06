@@ -109,7 +109,7 @@ describe("Alderlux configuration", () => {
   });
 
   it("every event type asks how the person heard about Alderlux", () => {
-    for (const et of t.eventTypes) expect(et.questions.some((q) => q.id === "heard_about" && q.required)).toBe(true);
+    for (const et of t.eventTypes.filter((e) => !e.clientOnly)) expect(et.questions.some((q) => q.id === "heard_about" && q.required)).toBe(true);
   });
 
   it("carries the approved footer verbatim", () => {

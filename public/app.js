@@ -48,7 +48,7 @@
   async function init() {
     state.config = await api("/api/config");
     const list = $("types");
-    for (const t of state.config.eventTypes) {
+    for (const t of state.config.eventTypes.filter((x) => !x.clientOnly)) {
       list.append(
         el("button", { class: "card", type: "button", role: "listitem", onclick: () => chooseType(t) },
           el("span", { class: "name" }, t.name),
@@ -134,7 +134,14 @@
       if (q.required) input.required = true;
       qs.append(el("label", {}, q.label + (q.required ? "" : " (optional)"), input));
     }
-    const lbl = state.config.mailingListLabel;
+    // Remember name and email on this device so returning clients do not retype them.
+    try {
+      const saved = JSON.parse(localStorage.getItem("alx_details") || "null");
+      const f = $("form");
+      if (saved && !f.elements.name.value) f.elements.name.value = saved.name || "";
+      if (saved && !f.elements.email.value) f.elements.email.value = saved.email || "";
+    } catch (e) { /* storage unavailable: nothing to prefill */ }
+    const lbl = state.type.clientOnly ? null : state.config.mailingListLabel;
     $("subscribe-row").hidden = !lbl;
     if (lbl) $("subscribe-label").textContent = lbl;
     $("form-error").textContent = "";
@@ -155,6 +162,7 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ type: state.type.slug, start: state.start, name: f.get("name"), email: f.get("email"), website: f.get("website"), answers, subscribe: f.get("subscribe") === "yes" }),
       });
+      try { localStorage.setItem("alx_details", JSON.stringify({ name: f.get("name"), email: f.get("email") })); } catch (e) { /* not stored */ }
       $("done-when").textContent = `${state.type.name}, ${longFmt.format(new Date(res.start))}`;
       $("ics-link").href = `/api/bookings/${encodeURIComponent(res.manageToken)}.ics`;
       show("done");

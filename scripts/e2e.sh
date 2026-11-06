@@ -14,7 +14,7 @@ pass=0; fail=0
 check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi; }
 
 cfg=$(curl -s "$B/api/config")
-check "config lists 3 meeting types" '[ "$(echo "$cfg" | jq ".eventTypes|length")" = 3 ]'
+check "config lists 4 meeting types (3 public + continuation)" '[ "$(echo "$cfg" | jq ".eventTypes|length")" = 4 ] && [ "$(echo "$cfg" | jq "[.eventTypes[]|select(.clientOnly)]|length")" = 1 ]'
 check "home page is served" 'curl -s "$B/" | grep -q "Choose a conversation"'
 check "security headers on page" 'curl -sI "$B/" | grep -qi "content-security-policy"'
 

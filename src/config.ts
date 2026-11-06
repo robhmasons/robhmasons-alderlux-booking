@@ -15,6 +15,9 @@ export interface EventType {
   durationMin: number;
   location: string;
   questions: Question[];
+  // Existing clients only: not listed on the public booking page (reached by its own link),
+  // asks no questions and shows no mailing-list box.
+  clientOnly?: boolean;
 }
 
 export interface Tenant {
@@ -120,6 +123,16 @@ export const TENANTS: Record<string, Tenant> = {
           { id: "timescale", label: "Timescale", type: "select", options: ["Exploring", "Immediate", "Next 3 months", "Next 12 months"] },
           heardAbout,
         ],
+      },
+      {
+        // Robert, 06/11/2026: Continuation clients book with no questions. Link: alderlux.com/book?type=continuation
+        slug: "continuation",
+        name: "Continuation session",
+        description: "For existing Continuation clients: an extra session at a time that suits you.",
+        durationMin: 30,
+        location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
+        questions: [],
+        clientOnly: true,
       },
     ],
   },

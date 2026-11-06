@@ -109,3 +109,16 @@ describe("client-facing links", () => {
     expect(JSON.stringify(t.pages)).not.toMatch(/workers\.dev|masons/);
   });
 });
+
+describe("continuation (existing clients)", () => {
+  it("books with name and email only, and is hidden from the public list", async () => {
+    const { validateBooking } = await import("../src/validate");
+    const { getTenant } = await import("../src/config");
+    const t = getTenant("alderlux")!;
+    const et = t.eventTypes.find((e) => e.slug === "continuation")!;
+    expect(et.clientOnly).toBe(true);
+    expect(et.questions).toEqual([]);
+    const v = validateBooking({ type: "continuation", start: "2026-11-20T10:00:00Z", name: "Laura Client", email: "laura@example.com" }, et);
+    expect(v.ok).toBe(true);
+  });
+});

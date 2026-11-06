@@ -1,4 +1,4 @@
-import { addDays, localParts, localToUtc, weekdayOf } from "./time";
+import { addDays, localParts, localToUtc, tzOffsetMinutes, weekdayOf } from "./time";
 
 export interface Interval {
   from: string; // "HH:MM" local
@@ -42,7 +42,24 @@ export function intervalsFor(date: string, availability: Availability): Interval
 /** Candidate start instants (UTC ms) for one local calendar date, before busy filtering. */
 export function candidateStarts(date: string, availability: Availability, rules: SlotRules): number[] {
   const out: number[] = [];
-  for (const iv of intervalsFor(date, availability)) {
+  const ivs = intervalsFor(date, availability);
+  if (!ivs.length) return out;
+  // Fast path: if the UTC offset is the same either side of the whole day, no clock change
+  // happens on it, so every wall-clock time maps with one fixed offset (keeps CPU well under
+  // the Workers free-plan 10 ms limit).
+  const [y, m, d] = date.split("-").map(Number);
+  const dayUtc = Date.UTC(y, m - 1, d);
+  const before = tzOffsetMinutes(dayUtc - 3 * 3600000, availability.timezone);
+  const after = tzOffsetMinutes(dayUtc + 27 * 3600000, availability.timezone);
+  if (before === after) {
+    for (const iv of ivs) {
+      const from = minutes(iv.from);
+      const to = minutes(iv.to);
+      for (let t = from; t + rules.durationMin <= to; t += rules.stepMin) out.push(dayUtc + (t - before) * 60000);
+    }
+    return out.sort((a, b) => a - b);
+  }
+  for (const iv of ivs) {
     const from = minutes(iv.from);
     const to = minutes(iv.to);
     for (let t = from; t + rules.durationMin <= to; t += rules.stepMin) {

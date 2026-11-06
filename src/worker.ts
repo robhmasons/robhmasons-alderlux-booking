@@ -4,10 +4,11 @@ import { addDays, isIsoDate, localDate, localParts } from "./time";
 import { validateBooking } from "./validate";
 import { bookedBusy, byToken, cancelByToken, dueReminders, insertIfFree, markReminded, setCalendarEventId } from "./db";
 import { googleBusy, googleDeleteEvent, googleInsertEvent, type CalendarEnv } from "./calendar";
-import { renderEmail, sendEmail, type EmailBinding } from "./email";
+import { renderEmail, sendEmail, type EmailBinding, type Message } from "./email";
+import { authorizeUrl, checkState, exchangeCode, makeState, outlookAppConfigured, outlookBusy, outlookCancelEvent, outlookConnected, outlookCreateEvent, outlookSendMail, safeEqual, type OutlookEnv } from "./outlook";
 import { buildIcs } from "./ics";
 
-export interface Env extends CalendarEnv {
+export interface Env extends CalendarEnv, OutlookEnv {
   DB: D1Database;
   ASSETS: Fetcher;
   EMAIL?: EmailBinding;
@@ -18,6 +19,12 @@ const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+}
+
+/** Send from the connected Outlook mailbox if there is one; otherwise Cloudflare Email Service; otherwise log (dev). */
+async function mail(env: Env, tenant: Tenant, msg: Message): Promise<void> {
+  if (await outlookConnected(env)) return outlookSendMail(env, msg);
+  return sendEmail(env.EMAIL, tenant.fromEmail, msg);
 }
 
 function token(): string {
@@ -34,7 +41,7 @@ function whenText(ms: number, tz: string): string {
 async function busyFor(env: Env, tenant: Tenant, from: number, to: number): Promise<Busy[]> {
   const [own, cal] = await Promise.all([
     bookedBusy(env.DB, tenant.slug, from, to),
-    googleBusy(env, from, to).catch((e) => {
+    (async () => ((await outlookConnected(env)) ? outlookBusy(env, from, to) : googleBusy(env, from, to)))().catch((e) => {
       console.error("calendar busy lookup failed", e);
       throw new Response(JSON.stringify({ error: "Availability is temporarily unavailable. Please try again shortly." }), { status: 503, headers: JSON_HEADERS });
     }),
@@ -101,25 +108,33 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   const answersText = eventType.questions.filter((q) => v.value.answers[q.id]).map((q) => `${q.label} ${v.value.answers[q.id]}`);
 
   // Side effects after the booking is safely stored. A failure here never loses the booking.
+  const useOutlook = await outlookConnected(env);
+  const detailLines = [`Booked via the ${tenant.name} booking page`, `Name: ${v.value.name}`, `Email: ${v.value.email}`, ...answersText];
   const tasks: Promise<unknown>[] = [];
-  tasks.push(
-    googleInsertEvent(env, { summary: `${eventType.name}: ${v.value.name}`, description: [`Booked via ${tenant.name} booking page`, `Email: ${v.value.email}`, ...answersText].join("\n"), location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email })
-      .then((eid) => (eid ? setCalendarEventId(env.DB, id, eid) : undefined))
-      .catch((e) => console.error("calendar insert failed", e)),
-  );
+  if (useOutlook) {
+    // Outlook adds the call to Robert's calendar and emails the client a calendar invitation.
+    const inviteHtml = `<p>${eventType.description}</p><p>${eventType.location}</p><p>To change or cancel: <a href="${manageUrl}">${manageUrl}</a></p><hr><p>${tenant.footer.join(" ")}</p>`;
+    tasks.push(
+      outlookCreateEvent(env, { subject: `${eventType.name}: ${v.value.name} and ${tenant.hostName}`, bodyHtml: inviteHtml, location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email, attendeeName: v.value.name })
+        .then((eid) => setCalendarEventId(env.DB, id, eid))
+        .catch((e) => console.error("outlook event failed", e)),
+    );
+  } else {
+    tasks.push(
+      googleInsertEvent(env, { summary: `${eventType.name}: ${v.value.name}`, description: detailLines.join("\n"), location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email })
+        .then((eid) => (eid ? setCalendarEventId(env.DB, id, eid) : undefined))
+        .catch((e) => console.error("calendar insert failed", e)),
+    );
+  }
   const client = renderEmail({
     headline: "Your call is confirmed",
     paragraphs: [`Dear ${v.value.name},`, `Thank you for booking. ${bookingSummary(eventType, startMs, tz).replace(/\n/g, ". ")}.`, "If you need to change or cancel, use the link below. You can also add the call to your calendar from there."],
     button: { label: "Manage your booking", url: manageUrl },
     footer: tenant.footer,
   });
-  tasks.push(sendEmail(env.EMAIL, tenant.fromEmail, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client }).catch((e) => console.error("client email failed", e)));
-  const host = renderEmail({
-    headline: "New booking",
-    paragraphs: [`${v.value.name} (${v.value.email}) booked ${eventType.name}.`, whenText(startMs, tz), ...answersText],
-    footer: tenant.footer,
-  });
-  tasks.push(sendEmail(env.EMAIL, tenant.fromEmail, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
+  tasks.push(mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client }).catch((e) => console.error("client email failed", e)));
+  const host = renderEmail({ headline: "New booking", paragraphs: [`${v.value.name} (${v.value.email}) booked ${eventType.name}.`, whenText(startMs, tz), ...answersText], footer: tenant.footer });
+  tasks.push(mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
   await Promise.all(tasks);
 
   return json({ id, type: eventType.slug, start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), manageUrl, manageToken: cancelToken }, 201);
@@ -149,13 +164,48 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
   const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
   const tz = tenant.availability.timezone;
   const tasks: Promise<unknown>[] = [];
-  if (b.calendar_event_id) tasks.push(googleDeleteEvent(env, b.calendar_event_id).catch((e) => console.error("calendar delete failed", e)));
+  if (b.calendar_event_id) {
+    const del = (await outlookConnected(env)) ? outlookCancelEvent(env, b.calendar_event_id, "This call has been cancelled.") : googleDeleteEvent(env, b.calendar_event_id);
+    tasks.push(del.catch((e) => console.error("calendar cancel failed", e)));
+  }
   const host = renderEmail({ headline: "Booking cancelled", paragraphs: [`${b.name} (${b.email}) cancelled ${et?.name ?? b.event_type}.`, whenText(b.start_ms, tz)], footer: tenant.footer });
-  tasks.push(sendEmail(env.EMAIL, tenant.fromEmail, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
+  tasks.push(mail(env, tenant, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
   const client = renderEmail({ headline: "Your call is cancelled", paragraphs: [`Dear ${b.name},`, `Your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)} has been cancelled. You are welcome to book another time.`], button: { label: "Book another time", url: tenant.publicBaseUrl }, footer: tenant.footer });
-  tasks.push(sendEmail(env.EMAIL, tenant.fromEmail, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client }).catch((e) => console.error("client email failed", e)));
+  tasks.push(mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client }).catch((e) => console.error("client email failed", e)));
   await Promise.all(tasks);
   return json({ status: "cancelled" });
+}
+
+function page(title: string, text: string, status = 200): Response {
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title><body style="font-family:system-ui;background:#0B0B0D;color:#D8D1C3;padding:32px"><h1 style="color:#F7F4EE;font-weight:400">${esc(title)}</h1><p>${esc(text)}</p></body>`, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+/** One-time connection of Robert's Outlook mailbox. Protected by ADMIN_KEY and a signed, time-limited state. */
+async function handleOutlookOAuth(url: URL, env: Env): Promise<Response> {
+  if (!outlookAppConfigured(env) || !env.ADMIN_KEY) return page("Outlook not set up", "The Microsoft app details have not been added yet.", 503);
+  const redirectUri = `${url.origin}/oauth/outlook/callback`;
+  if (url.pathname === "/oauth/outlook/start") {
+    if (!safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return page("Not allowed", "Wrong or missing key.", 403);
+    return Response.redirect(authorizeUrl(env, redirectUri, await makeState(env)), 302);
+  }
+  if (url.pathname === "/oauth/outlook/status") {
+    if (!safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return page("Not allowed", "Wrong or missing key.", 403);
+    return page("Outlook connection", (await outlookConnected(env)) ? "Connected." : "Not connected.");
+  }
+  if (url.pathname === "/oauth/outlook/callback") {
+    const state = url.searchParams.get("state") ?? "";
+    const code = url.searchParams.get("code");
+    if (!(await checkState(env, state)) || !code) return page("Connection failed", "The link expired or was not valid. Start again.", 400);
+    try {
+      await exchangeCode(env, code, redirectUri);
+    } catch (e) {
+      console.error("outlook connect failed", e);
+      return page("Connection failed", "Microsoft did not accept the connection. Start again.", 502);
+    }
+    return page("Outlook connected", "Bookings will now check your Outlook calendar, send invitations and email clients from your mailbox. You can close this page.");
+  }
+  return page("Not found", "", 404);
 }
 
 export async function runReminders(env: Env, now: number): Promise<number> {
@@ -168,7 +218,7 @@ export async function runReminders(env: Env, now: number): Promise<number> {
     const tz = tenant.availability.timezone;
     const msg = renderEmail({ headline: "A reminder of your call", paragraphs: [`Dear ${b.name},`, `This is a reminder of your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)}.`, et?.location ?? ""], button: { label: "Manage your booking", url: `${tenant.publicBaseUrl}/manage.html?t=${encodeURIComponent(b.cancel_token)}` }, footer: tenant.footer });
     try {
-      await sendEmail(env.EMAIL, tenant.fromEmail, { to: b.email, subject: `Reminder: ${et?.name ?? "your call"}, ${whenText(b.start_ms, tz)}`, ...msg });
+      await mail(env, tenant, { to: b.email, subject: `Reminder: ${et?.name ?? "your call"}, ${whenText(b.start_ms, tz)}`, ...msg });
       await markReminded(env.DB, b.id);
       sent++;
     } catch (e) {
@@ -182,6 +232,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const tenant = getTenant(url.searchParams.get("tenant") ?? env.TENANT ?? "alderlux");
+    if (url.pathname.startsWith("/oauth/outlook/")) return handleOutlookOAuth(url, env);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
     if (!tenant) return json({ error: "Unknown business." }, 404);
     const now = Date.now();

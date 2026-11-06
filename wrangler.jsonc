@@ -16,7 +16,7 @@
   // Reminder emails: every 30 minutes, send for calls starting within 24 hours.
   "triggers": { "crons": ["*/30 * * * *"] },
   "vars": { "TENANT": "alderlux" },
-  // Client emails need Cloudflare Email Service (Workers Paid plan). Uncomment at deploy time:
-  // "send_email": [{ "name": "EMAIL" }],
+  // Emails and calendar invitations go through Robert's Outlook (Microsoft Graph), which works on the
+  // free plan. Secrets to set: MS_CLIENT_ID, MS_CLIENT_SECRET, ADMIN_KEY (see README).
   "observability": { "enabled": true }
 }

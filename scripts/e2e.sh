@@ -55,5 +55,6 @@ check "unknown token is 404" '[ "$(curl -s -o /dev/null -w "%{http_code}" "$B/ap
 check "cron handler runs" 'curl -s "$B/__scheduled?cron=*/30+*+*+*+*" >/dev/null'
 check "dev emails were generated (confirmation + host)" 'grep -q "\[email:dev\] to=test@example.com" /tmp/alx-wrangler.log && grep -q "\[email:dev\] to=anna@alderlux.com" /tmp/alx-wrangler.log'
 
+check "Outlook connect page is locked until set up (503)" '[ "$(curl -s -o /dev/null -w "%{http_code}" "$B/oauth/outlook/start?key=x")" = 503 ]'
 echo "----"; echo "passed=$pass failed=$fail"
 [ "$fail" = 0 ]

@@ -122,3 +122,22 @@ describe("continuation (existing clients)", () => {
     expect(v.ok).toBe(true);
   });
 });
+
+describe("Google calendar connected through the sign-in step", () => {
+  it("uses the saved refresh token, adds the booking in the booking colour, and invites nobody", async () => {
+    _resetTokenCache();
+    const db = { prepare: () => ({ bind: () => ({ first: async () => ({ value: "saved-rt" }) }) }) } as unknown as D1Database;
+    const calls: { url: string; body: string }[] = [];
+    const f = (async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, body: String(init.body ?? "") });
+      return url.includes("/token") ? Response.json({ access_token: "a", expires_in: 3600 }) : Response.json({ id: "G1" });
+    }) as unknown as typeof fetch;
+    const id = await googleInsertEvent({ GOOGLE_CLIENT_ID: "c", GOOGLE_CLIENT_SECRET: "s", GOOGLE_CALENDAR_ID: "cal@group", DB: db }, { summary: "S", description: "d", location: "Zoom", start: 0, end: 1800000, attendeeEmail: "x@example.com" }, f);
+    expect(id).toBe("G1");
+    expect(calls[0].body).toContain("refresh_token=saved-rt");
+    const ev = JSON.parse(calls[1].body);
+    expect(ev.colorId).toBe("9");
+    expect(ev.attendees).toBeUndefined();
+    expect(calls[1].url).toContain("sendUpdates=none");
+  });
+});

@@ -3,7 +3,7 @@ import { availableSlots, isBookable, type Busy } from "./slots";
 import { addDays, isIsoDate, localDate, localParts } from "./time";
 import { validateBooking } from "./validate";
 import { type BookingRow, bookedBusy, byToken, cancelByToken, dueReminders, insertIfFree, markReminded, setCalendarEventId } from "./db";
-import { googleBusy, googleDeleteEvent, googleInsertEvent, type CalendarEnv } from "./calendar";
+import { googleAuthorizeUrl, googleBusy, googleConnected, googleDeleteEvent, googleExchangeCode, googleInsertEvent, type CalendarEnv } from "./calendar";
 import { connect } from "cloudflare:sockets";
 import { renderEmail, sendEmail, type EmailBinding, type Message } from "./email";
 import type { SmtpConfig } from "./smtp";
@@ -325,6 +325,33 @@ async function handleTestEmail(url: URL, env: Env): Promise<Response> {
   }
 }
 
+/** One-time connection of Robert's Google calendar, so each booking is added to it. Protected by ADMIN_KEY and a signed, time-limited state. */
+async function handleGoogleOAuth(url: URL, env: Env): Promise<Response> {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.ADMIN_KEY) return page("Google not set up", "The Google app details have not been added yet.", 503);
+  const redirectUri = `${url.origin}/oauth/google/callback`;
+  if (url.pathname === "/oauth/google/start") {
+    if (!safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return page("Not allowed", "Wrong or missing key.", 403);
+    return Response.redirect(googleAuthorizeUrl(env, redirectUri, await makeState(env)), 302);
+  }
+  if (url.pathname === "/oauth/google/status") {
+    if (!safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return page("Not allowed", "Wrong or missing key.", 403);
+    return page("Google connection", (await googleConnected(env)) ? "Connected." : "Not connected.");
+  }
+  if (url.pathname === "/oauth/google/callback") {
+    const state = url.searchParams.get("state") ?? "";
+    const code = url.searchParams.get("code");
+    if (!(await checkState(env, state)) || !code) return page("Connection failed", "The link expired or was not valid. Start again.", 400);
+    try {
+      await googleExchangeCode(env, code, redirectUri);
+    } catch (e) {
+      console.error("google connect failed: " + errText(e));
+      return page("Connection failed", "Google did not accept the connection. Start again.", 502);
+    }
+    return page("Google calendar connected", "Each new booking will now be added to your calendar, and removed if it is cancelled. Google emails nobody. You can close this page.");
+  }
+  return page("Not found", "", 404);
+}
+
 /** One-time connection of Robert's Outlook mailbox. Protected by ADMIN_KEY and a signed, time-limited state. */
 async function handleOutlookOAuth(url: URL, env: Env): Promise<Response> {
   if (!outlookAppConfigured(env) || !env.ADMIN_KEY) return page("Outlook not set up", "The Microsoft app details have not been added yet.", 503);
@@ -377,6 +404,7 @@ export default {
     const url = new URL(req.url);
     const tenant = tenantFor(url.searchParams.get("tenant") ?? env.TENANT ?? "alderlux", env);
     if (url.pathname.startsWith("/oauth/outlook/")) return handleOutlookOAuth(url, env);
+    if (url.pathname.startsWith("/oauth/google/")) return handleGoogleOAuth(url, env);
     if (url.pathname === "/admin/test-email") return handleTestEmail(url, env);
     if (url.pathname === "/admin/calendar-status") return handleCalendarStatus(url, env);
     if (url.pathname === "/calendar.ics") return handleFeed(url, env);

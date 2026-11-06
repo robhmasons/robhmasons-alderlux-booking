@@ -56,6 +56,11 @@ async function mail(env: Env, tenant: Tenant, msg: Message): Promise<void> {
   return sendEmail({ smtp: smtpConfig(env, tenant), connect: connect as never, binding: env.EMAIL, from: tenant.fromEmail }, msg);
 }
 
+function errText(e: unknown): string {
+  const t = (e as { transcript?: string[] })?.transcript;
+  return (e instanceof Error ? e.message : String(e)) + (t ? " | " + t.slice(-6).join(" / ") : "");
+}
+
 function token(): string {
   const b = new Uint8Array(24);
   crypto.getRandomValues(b);
@@ -162,9 +167,14 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
     button: { label: "Manage your booking", url: manageUrl },
     footer: tenant.footer,
   });
-  tasks.push(mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client, attachments: [{ filename: "alderlux-call.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: ics }] }).catch((e) => console.error("client email failed", e)));
   const host = renderEmail({ headline: "New booking", paragraphs: [`${v.value.name} (${v.value.email}) booked ${eventType.name}.`, whenText(startMs, tz), ...answersText], footer: tenant.footer });
-  tasks.push(mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
+  // One mail-server login at a time: some hosts refuse simultaneous logins to the same mailbox.
+  tasks.push(
+    (async () => {
+      await mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client, attachments: [{ filename: "alderlux-call.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: ics }] }).catch((e) => console.error("client email failed: " + errText(e)));
+      await mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host }).catch((e) => console.error("host email failed: " + errText(e)));
+    })(),
+  );
   await Promise.all(tasks);
 
   return json({ id, type: eventType.slug, start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), manageUrl, manageToken: cancelToken }, 201);
@@ -199,10 +209,14 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
     tasks.push(del.catch((e) => console.error("calendar cancel failed", e)));
   }
   const host = renderEmail({ headline: "Booking cancelled", paragraphs: [`${b.name} (${b.email}) cancelled ${et?.name ?? b.event_type}.`, whenText(b.start_ms, tz)], footer: tenant.footer });
-  tasks.push(mail(env, tenant, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
   const client = renderEmail({ headline: "Your call is cancelled", paragraphs: [`Dear ${b.name},`, `Your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)} has been cancelled. You are welcome to book another time.`], button: { label: "Book another time", url: tenant.publicBaseUrl }, footer: tenant.footer });
   const cancelIcs = buildIcs({ uid: `${b.id}@${new URL(tenant.publicBaseUrl).host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: "Cancelled", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: "CANCELLED" });
-  tasks.push(mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client, attachments: [{ filename: "alderlux-call-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("client email failed", e)));
+  tasks.push(
+    (async () => {
+      await mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client, attachments: [{ filename: "alderlux-call-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("client email failed: " + errText(e)));
+      await mail(env, tenant, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host }).catch((e) => console.error("host email failed: " + errText(e)));
+    })(),
+  );
   await Promise.all(tasks);
   return json({ status: "cancelled" });
 }
@@ -226,6 +240,19 @@ function serveStatic(url: URL): Response {
 function page(title: string, text: string, status = 200): Response {
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title><body style="font-family:system-ui;background:#0B0B0D;color:#D8D1C3;padding:32px"><h1 style="color:#F7F4EE;font-weight:400">${esc(title)}</h1><p>${esc(text)}</p></body>`, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+/** Sends one test email to the host address and shows the mail server conversation (password redacted). */
+async function handleTestEmail(url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_KEY || !safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return json({ error: "Not allowed." }, 403);
+  const tenant = tenantFor(env.TENANT ?? "alderlux", env)!;
+  const msg = renderEmail({ headline: "Test email", paragraphs: ["This is a test from the Alderlux booking system. No action needed."], footer: tenant.footer });
+  try {
+    await mail(env, tenant, { to: tenant.hostEmail, subject: "Alderlux booking system: test email", ...msg });
+    return json({ ok: true, sentTo: tenant.hostEmail });
+  } catch (e) {
+    return json({ ok: false, error: e instanceof Error ? e.message : String(e), transcript: (e as { transcript?: string[] }).transcript ?? [] });
+  }
 }
 
 /** One-time connection of Robert's Outlook mailbox. Protected by ADMIN_KEY and a signed, time-limited state. */
@@ -269,7 +296,7 @@ export async function runReminders(env: Env, now: number): Promise<number> {
       await markReminded(env.DB, b.id);
       sent++;
     } catch (e) {
-      console.error("reminder failed", b.id, e);
+      console.error("reminder failed " + b.id + ": " + errText(e));
     }
   }
   return sent;
@@ -280,6 +307,7 @@ export default {
     const url = new URL(req.url);
     const tenant = tenantFor(url.searchParams.get("tenant") ?? env.TENANT ?? "alderlux", env);
     if (url.pathname.startsWith("/oauth/outlook/")) return handleOutlookOAuth(url, env);
+    if (url.pathname === "/admin/test-email") return handleTestEmail(url, env);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS ? env.ASSETS.fetch(req) : serveStatic(url);
     if (!tenant) return json({ error: "Unknown business." }, 404);
     const now = Date.now();

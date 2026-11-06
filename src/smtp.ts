@@ -187,6 +187,10 @@ export async function sendSmtp(cfg: SmtpConfig, msg: MailMessage, connect: Conne
     await c.expect([250], "message");
     await c.send("QUIT");
     await c.reply().catch(() => undefined);
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    (err as Error & { transcript?: string[] }).transcript = c.transcript;
+    throw err;
   } finally {
     await socket.close().catch(() => undefined);
   }

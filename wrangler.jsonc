@@ -15,8 +15,8 @@
   ],
   // Reminder emails: every 30 minutes, send for calls starting within 24 hours.
   "triggers": { "crons": ["*/30 * * * *"] },
-  "vars": { "TENANT": "alderlux" },
-  // Emails and calendar invitations go through Robert's Outlook (Microsoft Graph), which works on the
-  // free plan. Secrets to set: MS_CLIENT_ID, MS_CLIENT_SECRET, ADMIN_KEY (see README).
+  "vars": { "TENANT": "alderlux", "SMTP_HOST": "mail.privateemail.com", "SMTP_PORT": "465", "SMTP_SECURE": "on", "SMTP_USER": "admin@alderlux.com" },
+  // Emails go from admin@alderlux.com via Namecheap Private Email (SMTP, port 465). Outlook is used for
+  // the calendar only. Secrets: SMTP_PASS, MS_CLIENT_ID, MS_CLIENT_SECRET, ADMIN_KEY (see README).
   "observability": { "enabled": true }
 }

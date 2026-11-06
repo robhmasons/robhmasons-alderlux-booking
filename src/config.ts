@@ -60,8 +60,8 @@ export const TENANTS: Record<string, Tenant> = {
     slug: "alderlux",
     name: "Alderlux",
     hostName: "Robert Hughes",
-    hostEmail: "anna@alderlux.com",
-    fromEmail: "anna@alderlux.com",
+    hostEmail: "admin@alderlux.com",
+    fromEmail: "admin@alderlux.com",
     publicBaseUrl: "https://book.alderlux.com",
     footer: [
       "Alderlux provides education and information only. We do not provide regulated financial advice, investment recommendations, legal or tax advice. Alderlux is not authorised by the Financial Conduct Authority.",

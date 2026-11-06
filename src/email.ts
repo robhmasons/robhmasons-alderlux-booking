@@ -2,26 +2,37 @@
 // (needs the Workers Paid plan to email arbitrary recipients). Without the binding,
 // messages are logged, which is what local development and tests use.
 
+import { sendSmtp, type Attachment, type Connect, type SmtpConfig } from "./smtp";
+
 export interface Message {
   to: string;
   subject: string;
   text: string;
   html: string;
+  attachments?: Attachment[];
 }
 
 export interface EmailBinding {
   send(msg: { from: string; to: string; subject: string; text: string; html: string }): Promise<unknown>;
 }
 
-export const outbox: Message[] = []; // populated when no binding is configured (dev/test)
+export interface Transport {
+  smtp?: SmtpConfig; // preferred: admin@alderlux.com via the domain's own mail server
+  connect?: Connect;
+  binding?: EmailBinding; // alternative: Cloudflare Email Service (paid plan)
+  from: string;
+}
 
-export async function sendEmail(binding: EmailBinding | undefined, from: string, msg: Message): Promise<void> {
-  if (!binding) {
-    outbox.push(msg);
-    console.log(`[email:dev] to=${msg.to} subject=${msg.subject}`);
+export const outbox: Message[] = []; // populated when no transport is configured (dev/test)
+
+export async function sendEmail(t: Transport, msg: Message): Promise<void> {
+  if (t.smtp && t.connect) return sendSmtp(t.smtp, { ...msg, replyTo: t.smtp.from }, t.connect);
+  if (t.binding) {
+    await t.binding.send({ from: t.from, to: msg.to, subject: msg.subject, text: msg.text, html: msg.html });
     return;
   }
-  await binding.send({ from, ...msg });
+  outbox.push(msg);
+  console.log(`[email:dev] to=${msg.to} subject=${msg.subject} attachments=${msg.attachments?.length ?? 0}`);
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

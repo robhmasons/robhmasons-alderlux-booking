@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { _resetOutlookCache, checkState, exchangeCode, makeState, outlookBusy, outlookCancelEvent, outlookConnected, outlookCreateEvent, outlookSendMail, getSetting, setSetting, authorizeUrl } from "../src/outlook";
+import { _resetOutlookCache, checkState, exchangeCode, makeState, outlookBusy, outlookDeleteEvent, outlookConnected, outlookCreateEvent, getSetting, setSetting, authorizeUrl } from "../src/outlook";
 
 // Minimal in-memory stand-in for the D1 "settings" table.
 function fakeDb() {
@@ -55,7 +55,7 @@ describe("Outlook connection", () => {
     const u = new URL(authorizeUrl({ ...base, DB: fakeDb().db }, "https://book.example/oauth/outlook/callback", "st"));
     expect(u.searchParams.get("scope")).toContain("offline_access");
     expect(u.searchParams.get("scope")).toContain("Calendars.ReadWrite");
-    expect(u.searchParams.get("scope")).toContain("Mail.Send");
+    expect(u.searchParams.get("scope")).not.toContain("Mail"); // Outlook must never be able to send email
   });
 
   it("exchanging the code stores the refresh token; refresh rotates and stores the new one", async () => {
@@ -110,26 +110,19 @@ describe("Outlook calendar and mail", () => {
     await expect(outlookBusy(env, 0, 1, f)).rejects.toThrow();
   });
 
-  it("creates an event with the client as attendee (Outlook sends the invitation)", async () => {
+  it("adds the call to the calendar with no attendees, so Outlook emails nobody", async () => {
     const { f, calls } = fakeMs((c) => tok(c) ?? Response.json({ id: "EV1" }, { status: 201 }));
-    const id = await outlookCreateEvent(env, { subject: "S", bodyHtml: "<p>b</p>", location: "Zoom", start: Date.parse("2026-11-20T10:00:00Z"), end: Date.parse("2026-11-20T10:45:00Z"), attendeeEmail: "c@x.com", attendeeName: "C" }, f);
+    const id = await outlookCreateEvent(env, { subject: "S", bodyText: "details", location: "Zoom", start: Date.parse("2026-11-20T10:00:00Z"), end: Date.parse("2026-11-20T10:45:00Z") }, f);
     expect(id).toBe("EV1");
     const body = JSON.parse(calls.find((c) => c.url.endsWith("/me/events"))!.body!);
     expect(body.start).toEqual({ dateTime: "2026-11-20T10:00:00.000", timeZone: "UTC" });
-    expect(body.attendees[0].emailAddress.address).toBe("c@x.com");
+    expect(body.attendees).toEqual([]);
+    expect(calls.some((c) => c.url.includes("sendMail"))).toBe(false);
   });
 
-  it("cancels an event, falling back to delete if cancel is refused", async () => {
-    const { f, calls } = fakeMs((c) => tok(c) ?? (c.url.endsWith("/cancel") ? new Response("", { status: 400 }) : new Response(null, { status: 204 })));
-    await outlookCancelEvent(env, "EV1", "Cancelled", f);
+  it("removes a cancelled call from the calendar", async () => {
+    const { f, calls } = fakeMs((c) => tok(c) ?? new Response(null, { status: 204 }));
+    await outlookDeleteEvent(env, "EV1", f);
     expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/me/events/EV1"))).toBe(true);
-  });
-
-  it("sends mail from the connected mailbox and keeps a copy in Sent", async () => {
-    const { f, calls } = fakeMs((c) => tok(c) ?? new Response(null, { status: 202 }));
-    await outlookSendMail(env, { to: "c@x.com", subject: "Hi", html: "<p>x</p>" }, f);
-    const body = JSON.parse(calls.find((c) => c.url.endsWith("/me/sendMail"))!.body!);
-    expect(body.saveToSentItems).toBe(true);
-    expect(body.message.toRecipients[0].emailAddress.address).toBe("c@x.com");
   });
 });

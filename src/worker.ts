@@ -4,8 +4,10 @@ import { addDays, isIsoDate, localDate, localParts } from "./time";
 import { validateBooking } from "./validate";
 import { bookedBusy, byToken, cancelByToken, dueReminders, insertIfFree, markReminded, setCalendarEventId } from "./db";
 import { googleBusy, googleDeleteEvent, googleInsertEvent, type CalendarEnv } from "./calendar";
+import { connect } from "cloudflare:sockets";
 import { renderEmail, sendEmail, type EmailBinding, type Message } from "./email";
-import { authorizeUrl, checkState, exchangeCode, makeState, outlookAppConfigured, outlookBusy, outlookCancelEvent, outlookConnected, outlookCreateEvent, outlookSendMail, safeEqual, type OutlookEnv } from "./outlook";
+import type { SmtpConfig } from "./smtp";
+import { authorizeUrl, checkState, exchangeCode, makeState, outlookAppConfigured, outlookBusy, outlookConnected, outlookCreateEvent, outlookDeleteEvent, safeEqual, type OutlookEnv } from "./outlook";
 import { buildIcs } from "./ics";
 
 export interface Env extends CalendarEnv, OutlookEnv {
@@ -13,6 +15,27 @@ export interface Env extends CalendarEnv, OutlookEnv {
   ASSETS: Fetcher;
   EMAIL?: EmailBinding;
   TENANT?: string; // default tenant slug
+  // Outgoing mail from admin@alderlux.com via the domain's mail server (Namecheap Private Email).
+  SMTP_HOST?: string;
+  SMTP_PORT?: string;
+  SMTP_SECURE?: "on" | "starttls" | "off";
+  SMTP_USER?: string;
+  SMTP_PASS?: string; // secret
+  MAIL_FROM?: string;
+  MAIL_FROM_NAME?: string;
+}
+
+function smtpConfig(env: Env, tenant: Tenant): SmtpConfig | undefined {
+  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) return undefined;
+  return {
+    host: env.SMTP_HOST,
+    port: Number(env.SMTP_PORT || 465),
+    secure: env.SMTP_SECURE || "on",
+    user: env.SMTP_USER,
+    pass: env.SMTP_PASS,
+    from: env.MAIL_FROM || tenant.fromEmail,
+    fromName: env.MAIL_FROM_NAME || tenant.name,
+  };
 }
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
@@ -21,10 +44,9 @@ function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
-/** Send from the connected Outlook mailbox if there is one; otherwise Cloudflare Email Service; otherwise log (dev). */
+/** Send from admin@alderlux.com (SMTP); otherwise Cloudflare Email Service if bound; otherwise log (dev). */
 async function mail(env: Env, tenant: Tenant, msg: Message): Promise<void> {
-  if (await outlookConnected(env)) return outlookSendMail(env, msg);
-  return sendEmail(env.EMAIL, tenant.fromEmail, msg);
+  return sendEmail({ smtp: smtpConfig(env, tenant), connect: connect as never, binding: env.EMAIL, from: tenant.fromEmail }, msg);
 }
 
 function token(): string {
@@ -112,10 +134,9 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   const detailLines = [`Booked via the ${tenant.name} booking page`, `Name: ${v.value.name}`, `Email: ${v.value.email}`, ...answersText];
   const tasks: Promise<unknown>[] = [];
   if (useOutlook) {
-    // Outlook adds the call to Robert's calendar and emails the client a calendar invitation.
-    const inviteHtml = `<p>${eventType.description}</p><p>${eventType.location}</p><p>To change or cancel: <a href="${manageUrl}">${manageUrl}</a></p><hr><p>${tenant.footer.join(" ")}</p>`;
+    // Adds the call to Robert's Outlook calendar only. No attendees, so Outlook emails nobody.
     tasks.push(
-      outlookCreateEvent(env, { subject: `${eventType.name}: ${v.value.name} and ${tenant.hostName}`, bodyHtml: inviteHtml, location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email, attendeeName: v.value.name })
+      outlookCreateEvent(env, { subject: `${eventType.name}: ${v.value.name}`, bodyText: [...detailLines, "", `Manage: ${manageUrl}`].join("\n"), location: eventType.location, start: startMs, end: endMs })
         .then((eid) => setCalendarEventId(env.DB, id, eid))
         .catch((e) => console.error("outlook event failed", e)),
     );
@@ -126,13 +147,15 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
         .catch((e) => console.error("calendar insert failed", e)),
     );
   }
+  const icsUid = `${id}@${new URL(tenant.publicBaseUrl).host}`;
+  const ics = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name} with ${tenant.name}`, description: `${eventType.description}\n\nManage your booking: ${manageUrl}`, location: eventType.location, organizerEmail: tenant.fromEmail });
   const client = renderEmail({
     headline: "Your call is confirmed",
     paragraphs: [`Dear ${v.value.name},`, `Thank you for booking. ${bookingSummary(eventType, startMs, tz).replace(/\n/g, ". ")}.`, "If you need to change or cancel, use the link below. You can also add the call to your calendar from there."],
     button: { label: "Manage your booking", url: manageUrl },
     footer: tenant.footer,
   });
-  tasks.push(mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client }).catch((e) => console.error("client email failed", e)));
+  tasks.push(mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client, attachments: [{ filename: "alderlux-call.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: ics }] }).catch((e) => console.error("client email failed", e)));
   const host = renderEmail({ headline: "New booking", paragraphs: [`${v.value.name} (${v.value.email}) booked ${eventType.name}.`, whenText(startMs, tz), ...answersText], footer: tenant.footer });
   tasks.push(mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
   await Promise.all(tasks);
@@ -165,13 +188,14 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
   const tz = tenant.availability.timezone;
   const tasks: Promise<unknown>[] = [];
   if (b.calendar_event_id) {
-    const del = (await outlookConnected(env)) ? outlookCancelEvent(env, b.calendar_event_id, "This call has been cancelled.") : googleDeleteEvent(env, b.calendar_event_id);
+    const del = (await outlookConnected(env)) ? outlookDeleteEvent(env, b.calendar_event_id) : googleDeleteEvent(env, b.calendar_event_id);
     tasks.push(del.catch((e) => console.error("calendar cancel failed", e)));
   }
   const host = renderEmail({ headline: "Booking cancelled", paragraphs: [`${b.name} (${b.email}) cancelled ${et?.name ?? b.event_type}.`, whenText(b.start_ms, tz)], footer: tenant.footer });
   tasks.push(mail(env, tenant, { to: tenant.hostEmail, subject: `Cancelled: ${b.name}, ${whenText(b.start_ms, tz)}`, ...host }).catch((e) => console.error("host email failed", e)));
   const client = renderEmail({ headline: "Your call is cancelled", paragraphs: [`Dear ${b.name},`, `Your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)} has been cancelled. You are welcome to book another time.`], button: { label: "Book another time", url: tenant.publicBaseUrl }, footer: tenant.footer });
-  tasks.push(mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client }).catch((e) => console.error("client email failed", e)));
+  const cancelIcs = buildIcs({ uid: `${b.id}@${new URL(tenant.publicBaseUrl).host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: "Cancelled", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: "CANCELLED" });
+  tasks.push(mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client, attachments: [{ filename: "alderlux-call-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("client email failed", e)));
   await Promise.all(tasks);
   return json({ status: "cancelled" });
 }
@@ -203,7 +227,7 @@ async function handleOutlookOAuth(url: URL, env: Env): Promise<Response> {
       console.error("outlook connect failed", e);
       return page("Connection failed", "Microsoft did not accept the connection. Start again.", 502);
     }
-    return page("Outlook connected", "Bookings will now check your Outlook calendar, send invitations and email clients from your mailbox. You can close this page.");
+    return page("Outlook connected", "Bookings will now check your Outlook calendar for busy times and add each call to it. Outlook does not email anyone. You can close this page.");
   }
   return page("Not found", "", 404);
 }

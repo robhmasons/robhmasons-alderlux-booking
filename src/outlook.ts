@@ -1,6 +1,7 @@
 // Microsoft Outlook (Microsoft Graph) integration, free with any Outlook.com or Microsoft 365 account.
-// Reads busy times, adds bookings to the calendar (Outlook then emails the client a calendar invitation),
-// cancels them, and sends the confirmation and reminder emails from the connected mailbox.
+// Calendar only: reads busy times, adds bookings to Robert's calendar and removes cancelled ones.
+// It never emails anyone: events are created without attendees, and the app has no mail permission.
+// Booking emails are sent from admin@alderlux.com (see smtp.ts).
 //
 // Keeping it working: Microsoft rotates refresh tokens, so every refresh stores the newest one in D1.
 // Reminders run every 30 minutes, which keeps the connection in regular use. If the connection is ever
@@ -19,7 +20,7 @@ export interface OutlookEnv {
 
 type Fetch = typeof fetch;
 const GRAPH = "https://graph.microsoft.com/v1.0";
-export const OUTLOOK_SCOPES = "offline_access openid User.Read Calendars.ReadWrite Mail.Send";
+export const OUTLOOK_SCOPES = "offline_access openid User.Read Calendars.ReadWrite";
 const REFRESH_KEY = "ms_refresh_token";
 
 export function outlookAppConfigured(env: OutlookEnv): boolean {
@@ -139,7 +140,7 @@ export async function outlookBusy(env: OutlookEnv, from: number, to: number, f: 
 
 export async function outlookCreateEvent(
   env: OutlookEnv,
-  ev: { subject: string; bodyHtml: string; location: string; start: number; end: number; attendeeEmail: string; attendeeName: string },
+  ev: { subject: string; bodyText: string; location: string; start: number; end: number },
   f: Fetch = fetch,
   now = Date.now(),
 ): Promise<string> {
@@ -148,30 +149,21 @@ export async function outlookCreateEvent(
     method: "POST",
     body: JSON.stringify({
       subject: ev.subject,
-      body: { contentType: "HTML", content: ev.bodyHtml },
+      body: { contentType: "Text", content: ev.bodyText },
       start: utc(ev.start),
       end: utc(ev.end),
       location: { displayName: ev.location },
-      attendees: [{ emailAddress: { address: ev.attendeeEmail, name: ev.attendeeName }, type: "required" }],
-      allowNewTimeProposals: false,
+      attendees: [], // deliberately none: Outlook must not email the client
+      isReminderOn: true,
+      reminderMinutesBeforeStart: 15,
     }),
   });
   if (!res.ok) throw new Error(`Outlook event create failed: ${res.status}`);
   return ((await res.json()) as { id: string }).id;
 }
 
-/** Cancels the event; Outlook emails the attendee a cancellation. */
-export async function outlookCancelEvent(env: OutlookEnv, eventId: string, comment: string, f: Fetch = fetch, now = Date.now()): Promise<void> {
-  const res = await graph(env, f, now, `/me/events/${encodeURIComponent(eventId)}/cancel`, { method: "POST", body: JSON.stringify({ comment }) });
-  if (res.ok || res.status === 404) return;
-  const del = await graph(env, f, now, `/me/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
-  if (!del.ok && del.status !== 404) throw new Error(`Outlook event cancel failed: ${res.status}/${del.status}`);
-}
-
-export async function outlookSendMail(env: OutlookEnv, msg: { to: string; subject: string; html: string }, f: Fetch = fetch, now = Date.now()): Promise<void> {
-  const res = await graph(env, f, now, "/me/sendMail", {
-    method: "POST",
-    body: JSON.stringify({ message: { subject: msg.subject, body: { contentType: "HTML", content: msg.html }, toRecipients: [{ emailAddress: { address: msg.to } }] }, saveToSentItems: true }),
-  });
-  if (!res.ok) throw new Error(`Outlook sendMail failed: ${res.status}`);
+/** Removes a cancelled booking from Robert's calendar. No attendees, so nobody is emailed. */
+export async function outlookDeleteEvent(env: OutlookEnv, eventId: string, f: Fetch = fetch, now = Date.now()): Promise<void> {
+  const res = await graph(env, f, now, `/me/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new Error(`Outlook event delete failed: ${res.status}`);
 }

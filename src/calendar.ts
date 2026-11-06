@@ -74,7 +74,6 @@ export async function googleInsertEvent(
       location: ev.location,
       start: { dateTime: new Date(ev.start).toISOString() },
       end: { dateTime: new Date(ev.end).toISOString() },
-      attendees: [{ email: ev.attendeeEmail }],
     }),
   });
   if (!res.ok) throw new Error(`Google event insert failed: ${res.status}`);

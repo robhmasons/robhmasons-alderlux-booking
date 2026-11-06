@@ -53,7 +53,7 @@ check "cancel works" '[ "$(curl -s -X POST "$B/api/bookings/$tok/cancel" | jq -r
 check "cancelled slot is offered again" 'curl -s "$B/api/slots?type=succession&days=14" | grep -q "$first"'
 check "unknown token is 404" '[ "$(curl -s -o /dev/null -w "%{http_code}" "$B/api/bookings/AAAAAAAAAAAAAAAAAAAAAAAA")" = 404 ]'
 check "cron handler runs" 'curl -s "$B/__scheduled?cron=*/30+*+*+*+*" >/dev/null'
-check "dev emails were generated (confirmation + host)" 'grep -q "\[email:dev\] to=test@example.com" /tmp/alx-wrangler.log && grep -q "\[email:dev\] to=anna@alderlux.com" /tmp/alx-wrangler.log'
+check "dev emails were generated (confirmation + host)" 'grep -q "\[email:dev\] to=test@example.com" /tmp/alx-wrangler.log && grep -q "\[email:dev\] to=admin@alderlux.com" /tmp/alx-wrangler.log'
 
 check "Outlook connect page is locked until set up (503)" '[ "$(curl -s -o /dev/null -w "%{http_code}" "$B/oauth/outlook/start?key=x")" = 503 ]'
 echo "----"; echo "passed=$pass failed=$fail"

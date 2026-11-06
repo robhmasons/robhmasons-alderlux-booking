@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book a call · Alderlux</title>
+<meta name="description" content="Book a private call with Alderlux: Bitcoin Intelligence and Wealth Preservation.">
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="band">
+  <div class="wrap"><a class="wordmark" href="https://alderlux.com">ALDERLUX</a></div>
+</header>
+<main class="wrap" id="app" aria-live="polite">
+  <section id="step-type">
+    <p class="eyebrow">Book a call</p>
+    <h1>Choose a conversation</h1>
+    <div id="types" class="cards" role="list"></div>
+  </section>
+
+  <section id="step-time" hidden>
+    <button class="back" data-back="type" type="button">&larr; Back</button>
+    <p class="eyebrow" id="time-eyebrow"></p>
+    <h1>Choose a time</h1>
+    <p class="muted" id="tz-note"></p>
+    <div class="days" id="days" role="tablist" aria-label="Days"></div>
+    <div class="times" id="times" role="list"></div>
+    <div class="pager"><button type="button" id="prev-week" class="link">Earlier</button><button type="button" id="next-week" class="link">Later</button></div>
+  </section>
+
+  <section id="step-form" hidden>
+    <button class="back" data-back="time" type="button">&larr; Back</button>
+    <p class="eyebrow" id="form-eyebrow"></p>
+    <h1>Your details</h1>
+    <p class="chosen" id="chosen"></p>
+    <form id="form" novalidate>
+      <label>Name<input name="name" autocomplete="name" required maxlength="120"></label>
+      <label>Email<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+      <div id="questions"></div>
+      <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <p class="fine">We use your details only to arrange and hold this call. We never ask for seed phrases, private keys or passwords.</p>
+      <p class="error" id="form-error" role="alert"></p>
+      <button class="primary" type="submit" id="submit">Confirm booking</button>
+    </form>
+  </section>
+
+  <section id="step-done" hidden>
+    <p class="eyebrow">Confirmed</p>
+    <h1>Your call is booked</h1>
+    <p class="chosen" id="done-when"></p>
+    <p>A confirmation is on its way by email, with a link to change or cancel.</p>
+    <p><a class="primary" id="ics-link" href="#">Add to calendar</a></p>
+  </section>
+</main>
+<footer class="wrap foot">
+  <hr>
+  <p class="fine" id="footer">Alderlux provides education and information only. We do not provide regulated financial advice, investment recommendations, legal or tax advice. Alderlux is not authorised by the Financial Conduct Authority.</p>
+</footer>
+<script src="/app.js" defer></script>
+</body>
+</html>

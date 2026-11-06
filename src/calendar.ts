@@ -1,0 +1,93 @@
+// Google Calendar integration: read busy times and add confirmed bookings to the host's calendar.
+// Optional: if the secrets are not set, the system runs on its own bookings only.
+
+import type { Busy } from "./slots";
+
+export interface CalendarEnv {
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REFRESH_TOKEN?: string;
+  GOOGLE_CALENDAR_ID?: string; // e.g. "primary"
+}
+
+type Fetch = typeof fetch;
+
+export function calendarConfigured(env: CalendarEnv): boolean {
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN);
+}
+
+let cached: { token: string; expires: number } | null = null;
+
+export function _resetTokenCache(): void {
+  cached = null;
+}
+
+async function accessToken(env: CalendarEnv, f: Fetch, now: number): Promise<string> {
+  if (cached && cached.expires > now + 60000) return cached.token;
+  const res = await f("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID!,
+      client_secret: env.GOOGLE_CLIENT_SECRET!,
+      refresh_token: env.GOOGLE_REFRESH_TOKEN!,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!res.ok) throw new Error(`Google token refresh failed: ${res.status}`);
+  const j = (await res.json()) as { access_token: string; expires_in: number };
+  cached = { token: j.access_token, expires: now + j.expires_in * 1000 };
+  return j.access_token;
+}
+
+export async function googleBusy(env: CalendarEnv, from: number, to: number, f: Fetch = fetch, now = Date.now()): Promise<Busy[]> {
+  if (!calendarConfigured(env)) return [];
+  const token = await accessToken(env, f, now);
+  const calendarId = env.GOOGLE_CALENDAR_ID || "primary";
+  const res = await f("https://www.googleapis.com/calendar/v3/freeBusy", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), items: [{ id: calendarId }] }),
+  });
+  if (!res.ok) throw new Error(`Google freeBusy failed: ${res.status}`);
+  const j = (await res.json()) as { calendars: Record<string, { busy?: { start: string; end: string }[]; errors?: unknown[] }> };
+  const cal = j.calendars?.[calendarId];
+  if (!cal || cal.errors?.length) throw new Error("Google freeBusy returned an error for the calendar");
+  return (cal.busy ?? []).map((b) => ({ start: Date.parse(b.start), end: Date.parse(b.end) }));
+}
+
+export async function googleInsertEvent(
+  env: CalendarEnv,
+  ev: { summary: string; description: string; location: string; start: number; end: number; attendeeEmail: string },
+  f: Fetch = fetch,
+  now = Date.now(),
+): Promise<string | null> {
+  if (!calendarConfigured(env)) return null;
+  const token = await accessToken(env, f, now);
+  const calendarId = encodeURIComponent(env.GOOGLE_CALENDAR_ID || "primary");
+  const res = await f(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=0&sendUpdates=none`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      summary: ev.summary,
+      description: ev.description,
+      location: ev.location,
+      start: { dateTime: new Date(ev.start).toISOString() },
+      end: { dateTime: new Date(ev.end).toISOString() },
+      attendees: [{ email: ev.attendeeEmail }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Google event insert failed: ${res.status}`);
+  return ((await res.json()) as { id: string }).id;
+}
+
+export async function googleDeleteEvent(env: CalendarEnv, eventId: string, f: Fetch = fetch, now = Date.now()): Promise<void> {
+  if (!calendarConfigured(env)) return;
+  const token = await accessToken(env, f, now);
+  const calendarId = encodeURIComponent(env.GOOGLE_CALENDAR_ID || "primary");
+  const res = await f(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(eventId)}?sendUpdates=none`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 410 && res.status !== 404) throw new Error(`Google event delete failed: ${res.status}`);
+}

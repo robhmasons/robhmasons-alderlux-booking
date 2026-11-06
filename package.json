@@ -1,0 +1,19 @@
+{
+  "name": "alderlux-booking",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply alderlux-booking --local",
+    "e2e": "bash scripts/e2e.sh"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20251014.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.9",
+    "wrangler": "4.42.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "alderlux-booking",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-10-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "alderlux-booking",
+      // Replace with the real ID from `wrangler d1 create alderlux-booking` at deploy time.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Reminder emails: every 30 minutes, send for calls starting within 24 hours.
+  "triggers": { "crons": ["*/30 * * * *"] },
+  "vars": { "TENANT": "alderlux" },
+  // Client emails need Cloudflare Email Service (Workers Paid plan). Uncomment at deploy time:
+  // "send_email": [{ "name": "EMAIL" }],
+  "observability": { "enabled": true }
+}

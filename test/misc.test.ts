@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { validateBooking } from "../src/validate";
 import { buildIcs } from "../src/ics";
-import { googleBusy, googleInsertEvent, _resetTokenCache } from "../src/calendar";
+import { googleBusy, googleInsertEvent, makeInsertEvent, makeDeleteEvent, _resetTokenCache } from "../src/calendar";
 import { renderEmail } from "../src/email";
 import { TENANTS } from "../src/config";
 
@@ -139,5 +139,24 @@ describe("Google calendar connected through the sign-in step", () => {
     expect(ev.colorId).toBe("9");
     expect(ev.attendees).toBeUndefined();
     expect(calls[1].url).toContain("sendUpdates=none");
+  });
+});
+
+describe("calendar through the Make webhook", () => {
+  it("sends the booking with no guests in the booking colour, and removes it by id", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const f = (async (_u: string, init: RequestInit = {}) => {
+      const b = JSON.parse(String(init.body));
+      sent.push(b);
+      return Response.json(b.action === "create" ? { status: 200, id: "EV9" } : { status: 204, id: "" });
+    }) as unknown as typeof fetch;
+    const env = { MAKE_CALENDAR_HOOK: "https://hook.example/x" };
+    expect(await makeInsertEvent(env, { summary: "The Edge: A", description: "d", location: "Zoom", start: 0, end: 3600000, attendeeEmail: "a@b.com" }, f)).toBe("EV9");
+    const ev = JSON.parse(sent[0].event as string);
+    expect(ev.colorId).toBe("9");
+    expect(ev.attendees).toBeUndefined();
+    expect(JSON.stringify(ev)).not.toContain("a@b.com");
+    await makeDeleteEvent(env, "EV9", f);
+    expect(sent[1]).toEqual({ action: "delete", eventId: "EV9" });
   });
 });

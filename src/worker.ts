@@ -3,7 +3,7 @@ import { availableSlots, isBookable, type Busy } from "./slots";
 import { addDays, isIsoDate, localDate, localParts } from "./time";
 import { validateBooking } from "./validate";
 import { type BookingRow, bookedBusy, byToken, cancelByToken, dueReminders, insertIfFree, markReminded, setCalendarEventId } from "./db";
-import { googleAuthorizeUrl, googleBusy, googleConnected, googleDeleteEvent, googleExchangeCode, googleInsertEvent, type CalendarEnv } from "./calendar";
+import { googleAuthorizeUrl, googleBusy, googleConnected, googleDeleteEvent, googleExchangeCode, googleInsertEvent, makeDeleteEvent, makeInsertEvent, type CalendarEnv } from "./calendar";
 import { connect } from "cloudflare:sockets";
 import { renderEmail, sendEmail, type EmailBinding, type Message } from "./email";
 import type { SmtpConfig } from "./smtp";
@@ -183,7 +183,7 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
     );
   } else {
     tasks.push(
-      googleInsertEvent(env, { summary: `${eventType.name}: ${v.value.name}`, description: detailLines.join("\n"), location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email })
+      (env.MAKE_CALENDAR_HOOK ? makeInsertEvent : googleInsertEvent)(env, { summary: `${eventType.name}: ${v.value.name}`, description: detailLines.join("\n"), location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email })
         .then((eid) => (eid ? setCalendarEventId(env.DB, id, eid) : undefined))
         .catch((e) => console.error("calendar insert failed", e)),
     );
@@ -244,7 +244,7 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
   const tz = tenant.availability.timezone;
   const tasks: Promise<unknown>[] = [];
   if (b.calendar_event_id) {
-    const del = (await outlookConnected(env)) ? outlookDeleteEvent(env, b.calendar_event_id) : googleDeleteEvent(env, b.calendar_event_id);
+    const del = (await outlookConnected(env)) ? outlookDeleteEvent(env, b.calendar_event_id) : env.MAKE_CALENDAR_HOOK ? makeDeleteEvent(env, b.calendar_event_id) : googleDeleteEvent(env, b.calendar_event_id);
     tasks.push(del.catch((e) => console.error("calendar cancel failed", e)));
   }
   const host = renderEmail({ headline: "Booking cancelled", paragraphs: [`${b.name} (${b.email}) cancelled ${et?.name ?? b.event_type}.`, whenText(b.start_ms, tz)], footer: tenant.footer });

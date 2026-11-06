@@ -9,10 +9,44 @@ export interface CalendarEnv {
   GOOGLE_REFRESH_TOKEN?: string;
   GOOGLE_CALENDAR_ID?: string; // e.g. "primary"
   DB?: D1Database; // holds the refresh token saved by the "Connect Google" step
+  // Make webhook that adds/removes events in the host's Google calendar using Make's own Google
+  // connection (no Google Cloud app needed). Secret: the URL is the credential.
+  MAKE_CALENDAR_HOOK?: string;
 }
 
-export const GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+type CalEvent = { summary: string; description: string; location: string; start: number; end: number; attendeeEmail: string };
+
+function eventBody(ev: CalEvent) {
+  return {
+    summary: ev.summary,
+    description: ev.description,
+    location: ev.location,
+    start: { dateTime: new Date(ev.start).toISOString() },
+    end: { dateTime: new Date(ev.end).toISOString() },
+    colorId: BOOKING_COLOUR,
+    transparency: "opaque",
+    reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 10 }] },
+  };
+}
+
+/** Adds the booking through the Make webhook. No attendees, so nobody is emailed. Returns the event id. */
+export async function makeInsertEvent(env: CalendarEnv, ev: CalEvent, f: Fetch = fetch): Promise<string | null> {
+  if (!env.MAKE_CALENDAR_HOOK) return null;
+  const res = await f(env.MAKE_CALENDAR_HOOK, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", event: JSON.stringify(eventBody(ev)) }) });
+  if (!res.ok) throw new Error(`calendar webhook failed: ${res.status}`);
+  const j = (await res.json().catch(() => ({}))) as { id?: string };
+  if (!j.id) throw new Error("calendar webhook returned no event id");
+  return j.id;
+}
+
+export async function makeDeleteEvent(env: CalendarEnv, eventId: string, f: Fetch = fetch): Promise<void> {
+  if (!env.MAKE_CALENDAR_HOOK) return;
+  const res = await f(env.MAKE_CALENDAR_HOOK, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "delete", eventId }) });
+  if (!res.ok) throw new Error(`calendar webhook failed: ${res.status}`);
+}
+
 const BOOKING_COLOUR = "9"; // Blueberry: bookings made through the booking page
+export const GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 async function refreshToken(env: CalendarEnv): Promise<string | null> {
   if (env.GOOGLE_REFRESH_TOKEN) return env.GOOGLE_REFRESH_TOKEN;

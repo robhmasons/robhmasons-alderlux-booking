@@ -6,6 +6,8 @@ export interface Question {
   type: "text" | "textarea" | "select";
   options?: string[];
   required?: boolean;
+  // For a "how would you like to meet" question: the location text each answer sets for the call.
+  locations?: Record<string, string>;
 }
 
 export interface EventType {
@@ -37,6 +39,20 @@ export interface Tenant {
   rules: Omit<SlotRules, "durationMin">;
   eventTypes: EventType[];
 }
+
+// Robert, 06/11/2026: clients choose video call or in person. The answer sets the location shown
+// in emails and the calendar entry.
+const meetingFormat: Question = {
+  id: "format",
+  label: "How would you like to meet?",
+  type: "select",
+  options: ["Video call (Zoom)", "In person at Adelphi Mill, Bollington"],
+  required: true,
+  locations: {
+    "Video call (Zoom)": "Video call (Zoom). We will send you the link before the call.",
+    "In person at Adelphi Mill, Bollington": "In person: Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
+  },
+};
 
 const heardAbout: Question = {
   id: "heard_about",
@@ -91,6 +107,7 @@ export const TENANTS: Record<string, Tenant> = {
         durationMin: 60,
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [
+          meetingFormat,
           { id: "goal", label: "What would you most like to understand or be able to do?", type: "textarea" },
           { id: "held_for", label: "How long have you held crypto?", type: "select", options: ["None yet", "Under 1 year", "1–5 years", "Over 5 years"] },
           { id: "assets", label: "Which crypto do you hold, if any? (for example Bitcoin, XRP, Ethereum)", type: "text" },
@@ -105,6 +122,7 @@ export const TENANTS: Record<string, Tenant> = {
         durationMin: 45,
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [
+          meetingFormat,
           { id: "for_whom", label: "Is this for yourself, a family member, or a client?", type: "select", options: ["Myself", "A family member", "A client (I am a professional adviser)"] },
           { id: "solicitor", label: "Is a solicitor involved? If so, which firm?", type: "text" },
           { id: "held_how", label: "Roughly how is the crypto held?", type: "select", options: ["Exchange", "Own wallet", "Multi-sig", "Mixed", "Not sure"] },

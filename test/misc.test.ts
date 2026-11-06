@@ -6,7 +6,7 @@ import { renderEmail } from "../src/email";
 import { TENANTS } from "../src/config";
 
 const et = TENANTS.alderlux.eventTypes.find((e) => e.slug === "succession")!;
-const good = { type: "succession", start: "2026-11-20T10:00:00.000Z", name: "Jane Smith", email: "Jane@Example.co.uk", answers: { heard_about: "Personal introduction", held_how: "Own wallet" } };
+const good = { type: "succession", start: "2026-11-20T10:00:00.000Z", name: "Jane Smith", email: "Jane@Example.co.uk", answers: { heard_about: "Personal introduction", held_how: "Own wallet", format: "Video call (Zoom)" } };
 
 describe("validateBooking", () => {
   it("accepts a valid booking and normalises email", () => {
@@ -89,7 +89,7 @@ describe("mailing list opt-in", () => {
     const { getTenant } = await import("../src/config");
     const t = getTenant("alderlux")!;
     const et = t.eventTypes[0];
-    const base = { type: et.slug, start: "2026-11-20T10:00:00Z", name: "Test Person", email: "t@example.com", answers: { heard_about: "Other" } };
+    const base = { type: et.slug, start: "2026-11-20T10:00:00Z", name: "Test Person", email: "t@example.com", answers: { heard_about: "Other", format: "Video call (Zoom)" } };
     const a = validateBooking(base, et);
     const b = validateBooking({ ...base, subscribe: true }, et);
     const c = validateBooking({ ...base, subscribe: "yes" }, et);
@@ -158,5 +158,21 @@ describe("calendar through the Make webhook", () => {
     expect(JSON.stringify(ev)).not.toContain("a@b.com");
     await makeDeleteEvent(env, "EV9", f);
     expect(sent[1]).toEqual({ action: "delete", eventId: "EV9" });
+  });
+});
+
+describe("meeting format", () => {
+  it("is asked on The Edge and Succession, and must be one of the two choices", async () => {
+    const { getTenant } = await import("../src/config");
+    const t = getTenant("alderlux")!;
+    for (const slug of ["the-edge", "succession"]) {
+      const et = t.eventTypes.find((e) => e.slug === slug)!;
+      const q = et.questions.find((x) => x.id === "format")!;
+      expect(q.required).toBe(true);
+      expect(Object.keys(q.locations!)).toEqual(q.options);
+      const base = { type: slug, start: "2026-11-20T10:00:00Z", name: "Test Person", email: "t@example.com", answers: { heard_about: "Other" } as Record<string, string> };
+      expect(validateBooking(base, et).ok).toBe(false);
+      expect(validateBooking({ ...base, answers: { ...base.answers, format: "In person at Adelphi Mill, Bollington" } }, et).ok).toBe(true);
+    }
   });
 });

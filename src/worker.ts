@@ -29,6 +29,14 @@ export interface Env extends CalendarEnv, OutlookEnv {
   PUBLIC_BASE_URL?: string; // overrides the tenant's public address (e.g. the workers.dev URL)
 }
 
+/** The call's location: set by the client's "how would you like to meet" answer when there is one. */
+function locationOf(et: EventType | undefined, answers: Record<string, string> | string | null | undefined): string {
+  if (!et) return "";
+  const a: Record<string, string> = typeof answers === "string" ? (() => { try { return JSON.parse(answers || "{}"); } catch { return {}; } })() : answers ?? {};
+  for (const q of et.questions) if (q.locations && a[q.id] && q.locations[a[q.id]]) return q.locations[a[q.id]];
+  return et.location;
+}
+
 function manageLink(t: Tenant, tok: string): string {
   return t.pages ? `${t.pages.manage}?t=${encodeURIComponent(tok)}` : `${t.publicBaseUrl}/manage.html?t=${encodeURIComponent(tok)}`;
 }
@@ -133,8 +141,8 @@ async function handleSlots(url: URL, env: Env, tenant: Tenant, now: number): Pro
   return json({ timezone: tz, type: et.slug, durationMin: et.durationMin, from: fromDate, days, lastBookableDate: addDays(today, tenant.rules.maxDaysAhead), slots: out });
 }
 
-function bookingSummary(et: EventType, start: number, tz: string): string {
-  return `${et.name}\n${whenText(start, tz)}\n${et.location}`;
+function bookingSummary(et: EventType, start: number, tz: string, loc?: string): string {
+  return `${et.name}\n${whenText(start, tz)}\n${loc ?? et.location}`;
 }
 
 async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): Promise<Response> {
@@ -168,6 +176,7 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   if (!ok) return json({ error: "Sorry, that time has just been taken. Please choose another." }, 409);
 
   const manageUrl = manageLink(tenant, cancelToken);
+  const callLocation = locationOf(eventType, v.value.answers);
   const answersText = eventType.questions.filter((q) => v.value.answers[q.id]).map((q) => `${q.label} ${v.value.answers[q.id]}`);
 
   // Side effects after the booking is safely stored. A failure here never loses the booking.
@@ -177,22 +186,22 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   if (useOutlook) {
     // Adds the call to Robert's Outlook calendar only. No attendees, so Outlook emails nobody.
     tasks.push(
-      outlookCreateEvent(env, { subject: `${eventType.name}: ${v.value.name}`, bodyText: [...detailLines, "", `Manage: ${manageUrl}`].join("\n"), location: eventType.location, start: startMs, end: endMs })
+      outlookCreateEvent(env, { subject: `${eventType.name}: ${v.value.name}`, bodyText: [...detailLines, "", `Manage: ${manageUrl}`].join("\n"), location: callLocation, start: startMs, end: endMs })
         .then((eid) => setCalendarEventId(env.DB, id, eid))
         .catch((e) => console.error("outlook event failed", e)),
     );
   } else {
     tasks.push(
-      (env.MAKE_CALENDAR_HOOK ? makeInsertEvent : googleInsertEvent)(env, { summary: `${eventType.name}: ${v.value.name}`, description: detailLines.join("\n"), location: eventType.location, start: startMs, end: endMs, attendeeEmail: v.value.email })
+      (env.MAKE_CALENDAR_HOOK ? makeInsertEvent : googleInsertEvent)(env, { summary: `${eventType.name}: ${v.value.name}`, description: detailLines.join("\n"), location: callLocation, start: startMs, end: endMs, attendeeEmail: v.value.email })
         .then((eid) => (eid ? setCalendarEventId(env.DB, id, eid) : undefined))
         .catch((e) => console.error("calendar insert failed", e)),
     );
   }
   const icsUid = `${id}@${uidHost(tenant)}`;
-  const ics = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name} with ${tenant.name}`, description: `${eventType.description}\n\nManage your booking: ${manageUrl}`, location: eventType.location, organizerEmail: tenant.fromEmail });
+  const ics = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name} with ${tenant.name}`, description: `${eventType.description}\n\nManage your booking: ${manageUrl}`, location: callLocation, organizerEmail: tenant.fromEmail });
   const client = renderEmail({
     headline: "Your call is confirmed",
-    paragraphs: [`Dear ${v.value.name},`, `Thank you for booking. ${bookingSummary(eventType, startMs, tz).replace(/\n/g, ". ")}.`, "If you need to change or cancel, use the link below. You can also add the call to your calendar from there."],
+    paragraphs: [`Dear ${v.value.name},`, `Thank you for booking. ${bookingSummary(eventType, startMs, tz, callLocation).replace(/\n/g, ". ")}.`, "If you need to change or cancel, use the link below. You can also add the call to your calendar from there."],
     button: { label: "Manage your booking", url: manageUrl },
     footer: tenant.footer,
   });
@@ -210,7 +219,7 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   tasks.push(
     (async () => {
       await mail(env, tenant, { to: v.value.email, subject: `Confirmed: ${eventType.name}, ${whenText(startMs, tz)}`, ...client, attachments: [{ filename: "alderlux-call.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: ics }] }).catch((e) => console.error("client email failed: " + errText(e)));
-      const hostIcs = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name}: ${v.value.name}`, description: [...detailLines, "", `Manage: ${manageUrl}`].join("\n"), location: eventType.location, organizerEmail: tenant.fromEmail });
+      const hostIcs = buildIcs({ uid: icsUid, start: startMs, end: endMs, summary: `${eventType.name}: ${v.value.name}`, description: [...detailLines, "", `Manage: ${manageUrl}`].join("\n"), location: callLocation, organizerEmail: tenant.fromEmail });
       await mail(env, tenant, { to: tenant.hostEmail, subject: `New booking: ${v.value.name}, ${whenText(startMs, tz)}`, ...host, attachments: [{ filename: "booking.ics", contentType: "text/calendar; charset=utf-8; method=PUBLISH", content: hostIcs }] }).catch((e) => console.error("host email failed: " + errText(e)));
     })(),
   );
@@ -223,14 +232,14 @@ async function handleManage(tokenValue: string, env: Env, tenant: Tenant): Promi
   const b = await byToken(env.DB, tokenValue);
   if (!b || b.tenant !== tenant.slug) return json({ error: "Booking not found." }, 404);
   const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
-  return json({ type: b.event_type, name: et?.name ?? b.event_type, start: new Date(b.start_ms).toISOString(), end: new Date(b.end_ms).toISOString(), status: b.status, location: et?.location ?? "", timezone: tenant.availability.timezone });
+  return json({ type: b.event_type, name: et?.name ?? b.event_type, start: new Date(b.start_ms).toISOString(), end: new Date(b.end_ms).toISOString(), status: b.status, location: locationOf(et, b.answers), timezone: tenant.availability.timezone });
 }
 
 async function handleIcs(tokenValue: string, env: Env, tenant: Tenant): Promise<Response> {
   const b = await byToken(env.DB, tokenValue);
   if (!b || b.tenant !== tenant.slug) return new Response("Not found", { status: 404 });
   const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
-  const ics = buildIcs({ uid: `${b.id}@${uidHost(tenant)}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: et?.description ?? "", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: b.status === "cancelled" ? "CANCELLED" : "CONFIRMED" });
+  const ics = buildIcs({ uid: `${b.id}@${uidHost(tenant)}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: et?.description ?? "", location: locationOf(et, b.answers), organizerEmail: tenant.fromEmail, status: b.status === "cancelled" ? "CANCELLED" : "CONFIRMED" });
   return new Response(ics, { headers: { "content-type": "text/calendar; charset=utf-8", "content-disposition": `attachment; filename="alderlux-call.ics"`, "cache-control": "no-store" } });
 }
 
@@ -249,7 +258,7 @@ async function handleCancel(tokenValue: string, env: Env, tenant: Tenant, now: n
   }
   const host = renderEmail({ headline: "Booking cancelled", paragraphs: [`${b.name} (${b.email}) cancelled ${et?.name ?? b.event_type}.`, whenText(b.start_ms, tz)], footer: tenant.footer });
   const client = renderEmail({ headline: "Your call is cancelled", paragraphs: [`Dear ${b.name},`, `Your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)} has been cancelled. You are welcome to book another time.`], button: { label: "Book another time", url: bookLink(tenant) }, footer: tenant.footer });
-  const cancelIcs = buildIcs({ uid: `${b.id}@${uidHost(tenant)}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: "Cancelled", location: et?.location ?? "", organizerEmail: tenant.fromEmail, status: "CANCELLED" });
+  const cancelIcs = buildIcs({ uid: `${b.id}@${uidHost(tenant)}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? "Call"} with ${tenant.name}`, description: "Cancelled", location: locationOf(et, b.answers), organizerEmail: tenant.fromEmail, status: "CANCELLED" });
   tasks.push(
     (async () => {
       await mail(env, tenant, { to: b.email, subject: `Cancelled: ${et?.name ?? "your call"}`, ...client, attachments: [{ filename: "alderlux-call-cancelled.ics", contentType: "text/calendar; charset=utf-8; method=CANCEL", content: cancelIcs }] }).catch((e) => console.error("client email failed: " + errText(e)));
@@ -293,7 +302,7 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
     const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
     const answers = JSON.parse(b.answers || "{}") as Record<string, string>;
     const lines = [`Email: ${b.email}`, ...(et?.questions ?? []).filter((q) => answers[q.id]).map((q) => `${q.label} ${answers[q.id]}`)];
-    return { uid: `${b.id}@${host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? b.event_type}: ${b.name}`, description: lines.join("\n"), location: et?.location ?? "" };
+    return { uid: `${b.id}@${host}`, start: b.start_ms, end: b.end_ms, summary: `${et?.name ?? b.event_type}: ${b.name}`, description: lines.join("\n"), location: locationOf(et, b.answers) };
   });
   return new Response(buildFeed(`${tenant.name} bookings`, events), { headers: { "content-type": "text/calendar; charset=utf-8", "cache-control": "no-store" } });
 }
@@ -387,7 +396,7 @@ export async function runReminders(env: Env, now: number): Promise<number> {
     if (!tenant) continue;
     const et = tenant.eventTypes.find((e) => e.slug === b.event_type);
     const tz = tenant.availability.timezone;
-    const msg = renderEmail({ headline: "A reminder of your call", paragraphs: [`Dear ${b.name},`, `This is a reminder of your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)}.`, et?.location ?? ""], button: { label: "Manage your booking", url: manageLink(tenant, b.cancel_token) }, footer: tenant.footer });
+    const msg = renderEmail({ headline: "A reminder of your call", paragraphs: [`Dear ${b.name},`, `This is a reminder of your ${et?.name ?? "call"} on ${whenText(b.start_ms, tz)}.`, locationOf(et, b.answers)], button: { label: "Manage your booking", url: manageLink(tenant, b.cancel_token) }, footer: tenant.footer });
     try {
       await mail(env, tenant, { to: b.email, subject: `Reminder: ${et?.name ?? "your call"}, ${whenText(b.start_ms, tz)}`, ...msg });
       await markReminded(env.DB, b.id);

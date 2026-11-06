@@ -23,7 +23,7 @@ first=$(echo "$slots" | jq -r '[.slots[]] | flatten | .[0]')
 check "slots returned for next 14 days" '[ "$first" != "null" ] && [ -n "$first" ]'
 check "unknown type is 404" '[ "$(curl -s -o /dev/null -w "%{http_code}" "$B/api/slots?type=nope")" = 404 ]'
 
-body=$(jq -n --arg s "$first" '{type:"succession",start:$s,name:"Test Person",email:"test@example.com",answers:{heard_about:"Personal introduction"}}')
+body=$(jq -n --arg s "$first" '{type:"succession",start:$s,name:"Test Person",email:"test@example.com",answers:{heard_about:"Personal introduction",format:"Video call (Zoom)"}}')
 res=$(curl -s -w "\n%{http_code}" -H 'content-type: application/json' -d "$body" "$B/api/bookings")
 code=$(echo "$res" | tail -1); json=$(echo "$res" | head -1)
 tok=$(echo "$json" | jq -r .manageToken)
@@ -34,7 +34,7 @@ check "same slot cannot be booked twice (409)" '[ "$code2" = 409 ]'
 
 # Simultaneous attempts on the next free slot: exactly one should win.
 second=$(curl -s "$B/api/slots?type=succession&days=14" | jq -r '[.slots[]] | flatten | .[0]')
-b2=$(jq -n --arg s "$second" '{type:"succession",start:$s,name:"Race One",email:"r1@example.com",answers:{heard_about:"LinkedIn"}}')
+b2=$(jq -n --arg s "$second" '{type:"succession",start:$s,name:"Race One",email:"r1@example.com",answers:{heard_about:"LinkedIn",format:"In person at Adelphi Mill, Bollington"}}')
 pids=(); : > /tmp/alx-race.txt
 for i in 1 2 3 4 5; do curl -s -o /dev/null -w "%{http_code}\n" -H 'content-type: application/json' -d "$b2" "$B/api/bookings" >> /tmp/alx-race.txt & pids+=($!); done
 wait "${pids[@]}"
@@ -45,7 +45,7 @@ after=$(curl -s "$B/api/slots?type=succession&days=14" | jq -r '[.slots[]] | fla
 check "booked slot no longer offered" '! echo "$after" | grep -q "$first"'
 
 check "validation: missing required answer is 400" '[ "$(curl -s -o /dev/null -w "%{http_code}" -H "content-type: application/json" -d "$(jq -n --arg s "$first" "{type:\"succession\",start:\$s,name:\"A B\",email:\"a@b.com\",answers:{}}")" "$B/api/bookings")" = 400 ]'
-check "validation: off-grid time is 409" '[ "$(curl -s -o /dev/null -w "%{http_code}" -H "content-type: application/json" -d "{\"type\":\"succession\",\"start\":\"2030-01-01T03:17:00Z\",\"name\":\"A B\",\"email\":\"a@b.com\",\"answers\":{\"heard_about\":\"Other\"}}" "$B/api/bookings")" = 409 ]'
+check "validation: off-grid time is 409" '[ "$(curl -s -o /dev/null -w "%{http_code}" -H "content-type: application/json" -d "{\"type\":\"succession\",\"start\":\"2030-01-01T03:17:00Z\",\"name\":\"A B\",\"email\":\"a@b.com\",\"answers\":{\"heard_about\":\"Other\",\"format\":\"Video call (Zoom)\"}}" "$B/api/bookings")" = 409 ]'
 
 check "manage view shows confirmed booking" '[ "$(curl -s "$B/api/bookings/$tok" | jq -r .status)" = confirmed ]'
 check "calendar file downloads" 'curl -s "$B/api/bookings/$tok.ics" | grep -q "BEGIN:VEVENT"'

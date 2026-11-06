@@ -155,7 +155,7 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
   const cancelToken = token();
   const ok = await insertIfFree(
     env.DB,
-    { id, tenant: tenant.slug, event_type: eventType.slug, start_ms: startMs, end_ms: endMs, name: v.value.name, email: v.value.email, answers: JSON.stringify(v.value.answers), heard_about: v.value.answers.heard_about ?? null, cancel_token: cancelToken, created_ms: now },
+    { id, tenant: tenant.slug, event_type: eventType.slug, start_ms: startMs, end_ms: endMs, name: v.value.name, email: v.value.email, answers: JSON.stringify(tenant.mailingList ? { ...v.value.answers, mailing_list: v.value.subscribe ? "yes" : "no" } : v.value.answers), heard_about: v.value.answers.heard_about ?? null, cancel_token: cancelToken, created_ms: now },
     tenant.rules.bufferMin,
   );
   if (!ok) return json({ error: "Sorry, that time has just been taken. Please choose another." }, 409);
@@ -189,7 +189,16 @@ async function handleBook(req: Request, env: Env, tenant: Tenant, now: number): 
     button: { label: "Manage your booking", url: manageUrl },
     footer: tenant.footer,
   });
-  const host = renderEmail({ headline: "New booking", paragraphs: [`${v.value.name} (${v.value.email}) booked ${eventType.name}.`, whenText(startMs, tz), ...answersText], footer: tenant.footer });
+  const listLine = tenant.mailingList ? [`Mailing list: ${v.value.subscribe ? "yes, opted in" : "no"}`] : [];
+  const host = renderEmail({ headline: "New booking", paragraphs: [`${v.value.name} (${v.value.email}) booked ${eventType.name}.`, whenText(startMs, tz), ...answersText, ...listLine], footer: tenant.footer });
+  if (tenant.mailingList && v.value.subscribe) {
+    // Same payload as the contact page form, so the existing Make scenario adds them to MailerLite.
+    tasks.push(
+      fetch(tenant.mailingList.webhookUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: v.value.email, source: "booking-page", list: tenant.mailingList.list }) })
+        .then((r) => { if (!r.ok) console.error("mailing list webhook failed: " + r.status); })
+        .catch((e) => console.error("mailing list webhook failed: " + errText(e))),
+    );
+  }
   // One mail-server login at a time: some hosts refuse simultaneous logins to the same mailbox.
   tasks.push(
     (async () => {
@@ -367,7 +376,7 @@ export default {
     const now = Date.now();
     try {
       if (req.method === "GET" && url.pathname === "/api/config") {
-        return json({ name: tenant.name, timezone: tenant.availability.timezone, footer: tenant.footer, eventTypes: tenant.eventTypes.map(({ slug, name, description, durationMin, location, questions }) => ({ slug, name, description, durationMin, location, questions })) });
+        return json({ name: tenant.name, timezone: tenant.availability.timezone, footer: tenant.footer, mailingListLabel: tenant.mailingList?.label ?? null, eventTypes: tenant.eventTypes.map(({ slug, name, description, durationMin, location, questions }) => ({ slug, name, description, durationMin, location, questions })) });
       }
       if (req.method === "GET" && url.pathname === "/api/slots") return await handleSlots(url, env, tenant, now);
       if (req.method === "POST" && url.pathname === "/api/bookings") return await handleBook(req, env, tenant, now);

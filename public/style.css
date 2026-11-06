@@ -61,6 +61,9 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--alx-gold); }
 textarea { min-height: 96px; resize: vertical; }
+form label.check { display: flex; align-items: flex-start; gap: 10px; color: var(--alx-body); line-height: 1.5; cursor: pointer; }
+form label.check[hidden] { display: none; }
+form label.check input { width: 18px; height: 18px; margin: 2px 0 0; padding: 0; flex: none; accent-color: var(--alx-gold); }
 .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .primary {
   display: inline-block; background: var(--alx-gold); color: var(--alx-ground); border: 0; padding: 16px 32px;

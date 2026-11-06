@@ -82,3 +82,20 @@ describe("renderEmail", () => {
     expect(text).toContain("Alderlux, Bollington Road, Bollington, United Kingdom");
   });
 });
+
+describe("mailing list opt-in", () => {
+  it("is off unless the box was ticked", async () => {
+    const { validateBooking } = await import("../src/validate");
+    const { getTenant } = await import("../src/config");
+    const t = getTenant("alderlux")!;
+    const et = t.eventTypes[0];
+    const base = { type: et.slug, start: "2026-11-20T10:00:00Z", name: "Test Person", email: "t@example.com", answers: { heard_about: "Other" } };
+    const a = validateBooking(base, et);
+    const b = validateBooking({ ...base, subscribe: true }, et);
+    const c = validateBooking({ ...base, subscribe: "yes" }, et);
+    expect(a.ok && a.value.subscribe).toBe(false);
+    expect(b.ok && b.value.subscribe).toBe(true);
+    expect(c.ok && c.value.subscribe).toBe(false);
+    expect(t.mailingList?.label).toContain("Send me free updates");
+  });
+});

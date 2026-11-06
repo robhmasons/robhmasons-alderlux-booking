@@ -7,6 +7,7 @@ export interface BookingInput {
   email: string;
   answers: Record<string, string>;
   website?: string; // honeypot: must be empty
+  subscribe: boolean; // opted in to the mailing list (unticked by default)
 }
 
 export type Validated = { ok: true; value: BookingInput & { startMs: number } } | { ok: false; error: string };
@@ -33,5 +34,5 @@ export function validateBooking(body: unknown, eventType: EventType | undefined)
     if (v && q.type === "select" && q.options && !q.options.includes(v)) return { ok: false, error: `Please choose an option for: ${q.label}` };
     if (v) answers[q.id] = v;
   }
-  return { ok: true, value: { type: eventType.slug, start: new Date(startMs).toISOString(), startMs, name, email, answers } };
+  return { ok: true, value: { type: eventType.slug, start: new Date(startMs).toISOString(), startMs, name, email, answers, subscribe: b.subscribe === true } };
 }

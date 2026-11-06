@@ -126,6 +126,9 @@
       if (q.required) input.required = true;
       qs.append(el("label", {}, q.label + (q.required ? "" : " (optional)"), input));
     }
+    const lbl = state.config.mailingListLabel;
+    $("subscribe-row").hidden = !lbl;
+    if (lbl) $("subscribe-label").textContent = lbl;
     $("form-error").textContent = "";
     show("form");
   }
@@ -142,7 +145,7 @@
       const res = await api("/api/bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: state.type.slug, start: state.start, name: f.get("name"), email: f.get("email"), website: f.get("website"), answers }),
+        body: JSON.stringify({ type: state.type.slug, start: state.start, name: f.get("name"), email: f.get("email"), website: f.get("website"), answers, subscribe: f.get("subscribe") === "yes" }),
       });
       $("done-when").textContent = `${state.type.name}, ${longFmt.format(new Date(res.start))}`;
       $("ics-link").href = `/api/bookings/${encodeURIComponent(res.manageToken)}.ics`;

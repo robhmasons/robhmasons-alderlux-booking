@@ -25,6 +25,8 @@ export interface Tenant {
   fromEmail: string;
   publicBaseUrl: string;
   footer: string[]; // shown verbatim under the booking page
+  // Optional opt-in to a mailing list. Unticked by default; only ticked boxes are sent on.
+  mailingList?: { label: string; webhookUrl: string; list: string };
   availability: Availability;
   rules: Omit<SlotRules, "durationMin">;
   eventTypes: EventType[];
@@ -61,6 +63,12 @@ export const TENANTS: Record<string, Tenant> = {
     name: "Alderlux",
     hostName: "Robert Hughes",
     hostEmail: "admin@alderlux.com",
+    // Same wording and Make webhook as the contact page form, so both feed one MailerLite list.
+    mailingList: {
+      label: "Send me free updates from Alderlux: new Insider issues and new entries in the Research Library.",
+      webhookUrl: "https://hook.eu1.make.com/zrl2ran6col1c83um6l0vlcd80ahj2d4",
+      list: "insider-and-library",
+    },
     fromEmail: "admin@alderlux.com",
     publicBaseUrl: "https://book.alderlux.com",
     footer: [

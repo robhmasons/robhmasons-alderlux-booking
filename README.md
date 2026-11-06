@@ -6,7 +6,7 @@ Built to host more than one business (`tenant`), starting with Alderlux only.
 ## What it does
 - Three meeting types (The Edge intro 60 min, Succession consultation 45 min, Corporate briefing 30 min) with the same questions as Calendly, plus a required "How did you hear about Alderlux?".
 - Working hours copied from Calendly on 06/11/2026 (Europe/London, including the 05/12/2026 override). UK clock changes handled and tested.
-- 12 hours' minimum notice, 60 days ahead, 15-minute buffer between calls, 30-minute start grid.
+- 12 hours' minimum notice, 60 days ahead, 30-minute gap before and after every booked call, 30-minute start grid.
 - Double booking is impossible: the database insert refuses any overlap in a single statement (tested with 5 simultaneous requests).
 - **All emails come from admin@alderlux.com**, sent through alderlux.com's own mail server (Namecheap Private Email) using that mailbox's login: client confirmation with a calendar file attached, a notice to admin@alderlux.com, cancellations (with a calendar cancellation file) and a reminder 24 hours before.
 - **Outlook is calendar-only** (Microsoft Graph): it checks Robert's Outlook calendar for busy times, adds each booking to it and removes cancelled ones. Events have no attendees and the app has no mail permission, so Outlook never emails anyone. Google Calendar is supported as an alternative.

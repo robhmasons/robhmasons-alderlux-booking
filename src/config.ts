@@ -67,7 +67,7 @@ export const TENANTS: Record<string, Tenant> = {
       "Alderlux provides education and information only. We do not provide regulated financial advice, investment recommendations, legal or tax advice. Alderlux is not authorised by the Financial Conduct Authority.",
     ],
     availability: alderluxAvailability,
-    rules: { stepMin: 30, minNoticeMin: 12 * 60, maxDaysAhead: 60, bufferMin: 15 },
+    rules: { stepMin: 30, minNoticeMin: 12 * 60, maxDaysAhead: 60, bufferMin: 30 }, // 30 min clear before and after every booked call (Robert, 06/11/2026)
     eventTypes: [
       {
         slug: "the-edge",

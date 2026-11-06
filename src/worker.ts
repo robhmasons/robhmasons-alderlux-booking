@@ -273,7 +273,9 @@ function serveStatic(url: URL): Response {
   const path = url.pathname === "/" ? "/index.html" : url.pathname;
   const f = STATIC[path];
   if (!f) return new Response("Not found", { status: 404, headers: SECURITY_HEADERS });
-  return new Response(f.body, { headers: { "content-type": f.type, "cache-control": "public, max-age=300", ...SECURITY_HEADERS } });
+  // Pages are always revalidated; their CSS/JS links carry a content version, so those can be cached long.
+  const cache = f.type.startsWith("text/html") ? "no-cache" : url.searchParams.has("v") ? "public, max-age=31536000, immutable" : "public, max-age=300";
+  return new Response(f.body, { headers: { "content-type": f.type, "cache-control": cache, ...SECURITY_HEADERS } });
 }
 
 function page(title: string, text: string, status = 200): Response {

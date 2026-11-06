@@ -40,11 +40,12 @@ const heardAbout: Question = {
 
 // Working hours: copied from Calendly on 06/11/2026, then restricted by Robert on 06/11/2026:
 // never Saturdays; never Sundays 09:00-20:00; never weekdays 00:00-05:00 or 14:00-20:00.
+// Monday widened by Robert on 06/11/2026 to 05:00-14:00 (client sessions block themselves via Outlook).
 const alderluxAvailability: Availability = {
   timezone: "Europe/London",
   weekly: {
     sunday: [{ from: "20:00", to: "23:45" }],
-    monday: [{ from: "06:15", to: "07:00" }, { from: "12:30", to: "14:00" }, { from: "20:00", to: "23:45" }],
+    monday: [{ from: "05:00", to: "14:00" }, { from: "20:00", to: "23:45" }], // Robert 06/11/2026: open 05:00-14:00; Ashley and Annabelle are blocked by Outlook
     tuesday: [{ from: "06:15", to: "07:00" }, { from: "09:30", to: "13:00" }, { from: "20:00", to: "23:45" }],
     wednesday: [{ from: "06:15", to: "07:00" }, { from: "09:30", to: "13:00" }, { from: "20:00", to: "23:45" }],
     thursday: [{ from: "06:15", to: "07:00" }, { from: "12:30", to: "14:00" }, { from: "20:00", to: "23:45" }],

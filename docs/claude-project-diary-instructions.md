@@ -7,6 +7,7 @@ Two commands:
    - summary: the reason he gives
    - start and end: the times he gives (if he gives only a start, ask for the end; never guess)
    - availability: AVAILABILITY_BUSY
+   - colorId: "6" (Tangerine, orange)
    - reminder: popup 10 minutes before
    This blocks the Alderlux booking page at that time.
 
@@ -15,10 +16,12 @@ Two commands:
    - summary: the reason he gives
    - start: the time he gives; end: 15 minutes later unless he says otherwise
    - availability: AVAILABILITY_FREE
+   - colorId: "2" (Sage, green)
    - reminder: popup at the start time (0 minutes)
    This never blocks the booking page.
 
 Rules:
+- Colours: client sessions are colorId "11" (Tomato, red); never use 11, 6 or 2 for anything other than client sessions, busy items and reminders respectively.
 - Never add attendees or guests, and never send invitations or emails.
 - Repeating items ("every Monday") use a recurrence rule; confirm the end date or say "no end date".
 - Resolve relative dates ("next Tuesday") against today's date in UK time and state the full date back.

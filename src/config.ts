@@ -146,7 +146,7 @@ export const TENANTS: Record<string, Tenant> = {
         // Robert, 06/11/2026: Continuation clients book with no questions. Link: alderlux.com/book?type=continuation
         slug: "continuation",
         name: "Continuation session",
-        description: "For existing Continuation clients: an extra session at a time that suits you.",
+        description: "An extra session at a time that suits you, for clients on a Continuation programme.",
         durationMin: 30,
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [],

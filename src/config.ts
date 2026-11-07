@@ -119,7 +119,7 @@ export const TENANTS: Record<string, Tenant> = {
         slug: "succession",
         name: "Succession: introductory consultation",
         description: "A confidential consultation on making Bitcoin reachable by the right people if you die or lose capacity.",
-        durationMin: 45,
+        durationMin: 60, // every first call is 60 minutes (Robert, 07/11/2026)
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [
           meetingFormat,
@@ -133,7 +133,7 @@ export const TENANTS: Record<string, Tenant> = {
         slug: "corporate",
         name: "Corporate: briefing call",
         description: "A briefing for directors considering Bitcoin in their business: treasury, payments or board education.",
-        durationMin: 30,
+        durationMin: 60, // every first call is 60 minutes (Robert, 07/11/2026)
         location: "Zoom",
         questions: [
           { id: "company", label: "Company name and your role", type: "text", required: true },

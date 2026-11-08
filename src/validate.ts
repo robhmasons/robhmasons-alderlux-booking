@@ -8,6 +8,7 @@ export interface BookingInput {
   answers: Record<string, string>;
   website?: string; // honeypot: must be empty
   subscribe: boolean; // opted in to the mailing list (unticked by default)
+  member?: boolean; // members-only types: the booker ticked "I am an existing Alderlux member"
 }
 
 export type Validated = { ok: true; value: BookingInput & { startMs: number } } | { ok: false; error: string };
@@ -25,6 +26,7 @@ export function validateBooking(body: unknown, eventType: EventType | undefined)
   if (!EMAIL_RE.test(email) || email.length > 254) return { ok: false, error: "Please enter a valid email address." };
   const startMs = typeof b.start === "string" ? Date.parse(b.start) : NaN;
   if (Number.isNaN(startMs)) return { ok: false, error: "Please choose a time." };
+  if (eventType.clientOnly && b.member !== true) return { ok: false, error: "Please confirm you are an existing Alderlux member." };
   const raw = (b.answers && typeof b.answers === "object" ? b.answers : {}) as Record<string, unknown>;
   const answers: Record<string, string> = {};
   for (const q of eventType.questions) {
@@ -34,5 +36,5 @@ export function validateBooking(body: unknown, eventType: EventType | undefined)
     if (v && q.type === "select" && q.options && !q.options.includes(v)) return { ok: false, error: `Please choose an option for: ${q.label}` };
     if (v) answers[q.id] = v;
   }
-  return { ok: true, value: { type: eventType.slug, start: new Date(startMs).toISOString(), startMs, name, email, answers, subscribe: b.subscribe === true } };
+  return { ok: true, value: { type: eventType.slug, start: new Date(startMs).toISOString(), startMs, name, email, answers, subscribe: b.subscribe === true, member: b.member === true } };
 }

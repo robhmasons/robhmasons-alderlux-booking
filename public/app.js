@@ -48,9 +48,12 @@
   async function init() {
     state.config = await api("/api/config");
     const list = $("types");
-    for (const t of state.config.eventTypes.filter((x) => !x.clientOnly)) {
+    // Members-only types come last, styled apart, so new visitors start with the public calls.
+    const types = [...state.config.eventTypes.filter((x) => !x.clientOnly), ...state.config.eventTypes.filter((x) => x.clientOnly)];
+    for (const t of types) {
       list.append(
-        el("button", { class: "card", type: "button", role: "listitem", onclick: () => chooseType(t) },
+        el("button", { class: t.clientOnly ? "card members" : "card", type: "button", role: "listitem", onclick: () => chooseType(t) },
+          ...(t.clientOnly ? [el("span", { class: "badge" }, "Existing members only")] : []),
           el("span", { class: "name" }, t.name),
           el("span", { class: "meta" }, `${t.durationMin} minutes`),
           el("span", {}, t.description)),
@@ -141,6 +144,9 @@
       if (saved && !f.elements.name.value) f.elements.name.value = saved.name || "";
       if (saved && !f.elements.email.value) f.elements.email.value = saved.email || "";
     } catch (e) { /* storage unavailable: nothing to prefill */ }
+    const memberRow = $("member-row");
+    memberRow.hidden = !state.type.clientOnly;
+    memberRow.querySelector("input").required = !!state.type.clientOnly;
     const lbl = state.type.clientOnly ? null : state.config.mailingListLabel;
     $("subscribe-row").hidden = !lbl;
     if (lbl) $("subscribe-label").textContent = lbl;
@@ -160,7 +166,7 @@
       const res = await api("/api/bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: state.type.slug, start: state.start, name: f.get("name"), email: f.get("email"), website: f.get("website"), answers, subscribe: f.get("subscribe") === "yes" }),
+        body: JSON.stringify({ type: state.type.slug, start: state.start, name: f.get("name"), email: f.get("email"), website: f.get("website"), answers, subscribe: f.get("subscribe") === "yes", member: f.get("member") === "yes" }),
       });
       try { localStorage.setItem("alx_details", JSON.stringify({ name: f.get("name"), email: f.get("email") })); } catch (e) { /* not stored */ }
       $("done-when").textContent = `${state.type.name}, ${longFmt.format(new Date(res.start))}`;

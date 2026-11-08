@@ -35,6 +35,10 @@ h1 { color: var(--alx-ink); font-weight: 400; font-size: clamp(26px, 5vw, 34px);
 }
 .card:hover, .card:focus-visible { border-color: var(--alx-gold); outline: none; }
 .card .name { color: var(--alx-ink); font-size: 18px; font-weight: 500; display: block; }
+/* Members-only tile (Robert, 08/11/2026): same layout, warmer ground and a gold hairline so it reads as separate. */
+.card.members { background: #1A1712; border-color: #4A3F2A; }
+.card.members:hover, .card.members:focus-visible { border-color: var(--alx-gold); }
+.card .badge { display: inline-block; color: var(--alx-gold); font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
 .card .meta { color: var(--alx-gold); font-size: 13px; letter-spacing: 0.06em; display: block; margin: 2px 0 6px; }
 .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 16px 0; }
 .day {

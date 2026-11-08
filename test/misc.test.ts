@@ -21,6 +21,15 @@ describe("validateBooking", () => {
     expect(validateBooking({ ...good, email: "nope" }, et).ok).toBe(false);
     expect(validateBooking({ ...good, start: "soon" }, et).ok).toBe(false);
   });
+  it("members-only type needs the member tick", () => {
+    const cont = TENANTS.alderlux.eventTypes.find((e) => e.slug === "continuation")!;
+    const base = { type: "continuation", start: good.start, name: "Jo Member", email: "jo@example.org", answers: {} };
+    expect(validateBooking(base, cont).ok).toBe(false);
+    expect(validateBooking({ ...base, member: "yes" }, cont).ok).toBe(false);
+    const v = validateBooking({ ...base, member: true }, cont);
+    expect(v.ok && v.value.member).toBe(true);
+    expect(validateBooking(good, et).ok).toBe(true); // public types do not ask
+  });
   it("drops answers to questions that do not exist", () => {
     const v = validateBooking({ ...good, answers: { ...good.answers, injected: "x" } }, et);
     expect(v.ok && "injected" in v.value.answers).toBe(false);
@@ -110,15 +119,15 @@ describe("client-facing links", () => {
   });
 });
 
-describe("continuation (existing clients)", () => {
-  it("books with name and email only, and is hidden from the public list", async () => {
+describe("continuation (existing members)", () => {
+  it("books with name, email and the member tick only (listed last on the page, 08/11/2026)", async () => {
     const { validateBooking } = await import("../src/validate");
     const { getTenant } = await import("../src/config");
     const t = getTenant("alderlux")!;
     const et = t.eventTypes.find((e) => e.slug === "continuation")!;
     expect(et.clientOnly).toBe(true);
     expect(et.questions).toEqual([]);
-    const v = validateBooking({ type: "continuation", start: "2026-11-20T10:00:00Z", name: "Laura Client", email: "laura@example.com" }, et);
+    const v = validateBooking({ type: "continuation", start: "2026-11-20T10:00:00Z", name: "Laura Client", email: "laura@example.com", member: true }, et);
     expect(v.ok).toBe(true);
   });
 });

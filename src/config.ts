@@ -17,8 +17,9 @@ export interface EventType {
   durationMin: number;
   location: string;
   questions: Question[];
-  // Existing clients only: not listed on the public booking page (reached by its own link),
-  // asks no questions and shows no mailing-list box.
+  // Existing members only (Robert, 08/11/2026): listed last on the booking page with its own
+  // style and an "Existing members only" label; the booker must tick "I am an existing Alderlux
+  // member"; asks no other questions and shows no mailing-list box.
   clientOnly?: boolean;
 }
 
@@ -144,9 +145,10 @@ export const TENANTS: Record<string, Tenant> = {
       },
       {
         // Robert, 06/11/2026: Continuation clients book with no questions. Link: alderlux.com/book?type=continuation
+        // Robert, 08/11/2026: shown on the booking page as the last tile, for existing members only.
         slug: "continuation",
         name: "Continuation session",
-        description: "For existing Continuation clients: an extra session at a time that suits you.",
+        description: "For existing members: an extra session at a time that suits you.",
         durationMin: 30,
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [],

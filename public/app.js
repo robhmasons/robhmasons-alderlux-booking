@@ -50,17 +50,19 @@
     const list = $("types");
     // Public calls first; calls for existing clients last, marked as such.
     const ordered = [...state.config.eventTypes.filter((x) => !x.clientOnly), ...state.config.eventTypes.filter((x) => x.clientOnly)];
+    // ?type=<slug> highlights that call; every call stays on show and the visitor still chooses.
+    const pre = new URLSearchParams(location.search).get("type");
     for (const t of ordered) {
-      const card = el("button", { class: t.clientOnly ? "card members" : "card", type: "button", role: "listitem", onclick: () => chooseType(t) },
+      const suggested = t.slug === pre;
+      const cls = ["card", t.clientOnly ? "members" : "", suggested ? "suggested" : ""].filter(Boolean).join(" ");
+      const card = el("button", { class: cls, type: "button", role: "listitem", onclick: () => chooseType(t) },
         el("span", { class: "name" }, t.name),
         el("span", { class: "meta" }, `${t.durationMin} minutes`),
         el("span", {}, t.description));
       if (t.clientOnly) card.append(el("span", { class: "members-note" }, "Existing members only"));
+      if (suggested) card.setAttribute("aria-current", "true");
       list.append(card);
     }
-    const pre = new URLSearchParams(location.search).get("type");
-    const match = state.config.eventTypes.find((t) => t.slug === pre);
-    if (match) chooseType(match);
   }
 
   async function chooseType(t) {

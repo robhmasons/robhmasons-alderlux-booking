@@ -16,6 +16,8 @@ const ERROR_KEY = "calendly_last_error";
 
 /** How long a Calendly fetch stays fresh before the next page load fetches again. */
 export const CALENDLY_CACHE_TTL_MS = 5 * 60 * 1000;
+/** If a refresh fails, a Calendly result up to this old is still preferred to the .ics link (which can be 3 hours old). */
+export const CALENDLY_STALE_OK_MS = 30 * 60 * 1000;
 /** Days ahead to fetch. Must cover the furthest bookable day (config maxDaysAhead, 60) plus a margin. Same as the .ics path. */
 export const BUSY_WINDOW_DAYS = 75;
 /** Calendly allows at most 7 days per request. A minute short of that, so a boundary rounding never gets a 400. */

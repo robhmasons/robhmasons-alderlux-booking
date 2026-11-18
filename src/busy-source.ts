@@ -3,7 +3,7 @@
 // shows "temporarily unavailable" instead of offering times that may clash.
 
 import type { Busy } from "./slots";
-import { cachedCalendlyBusy, refreshCalendlyBusy, type CalendlyEnv } from "./calendly-busy";
+import { CALENDLY_STALE_OK_MS, cachedCalendlyBusy, readCalendlyCache, refreshCalendlyBusy, type CalendlyEnv } from "./calendly-busy";
 import { cachedIcsBusy, refreshIcsBusy } from "./ics-busy";
 
 export interface BusySourceEnv extends CalendlyEnv {
@@ -39,7 +39,14 @@ export async function publishedBusy(env: BusySourceEnv, now: number, f: typeof f
         await refreshCalendlyBusy(env.DB, env, now, f);
         cache = await cachedCalendlyBusy(env.DB, now);
       } catch (e) {
-        console.error("Calendly busy times failed, using the calendar link instead: " + msg(e));
+        // A brief Calendly failure: a result from the last 30 minutes beats the slower .ics link.
+        const last = await readCalendlyCache(env.DB);
+        if (last && last.fetched <= now && now - last.fetched <= CALENDLY_STALE_OK_MS) {
+          console.error("Calendly busy times failed, using the result from " + Math.round((now - last.fetched) / 60000) + " min ago: " + msg(e));
+          cache = last;
+        } else {
+          console.error("Calendly busy times failed, using the calendar link instead: " + msg(e));
+        }
       }
     }
     if (cache) return { source: "calendly", ...cache };

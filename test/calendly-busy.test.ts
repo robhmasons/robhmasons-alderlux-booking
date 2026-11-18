@@ -172,6 +172,20 @@ describe("Calendly busy times: fallback to the calendar link", () => {
     });
   }
 
+  for (const [ageMin, expected] of [[10, "calendly"], [40, "ics"]] as const) {
+    it(`a Calendly failure ${ageMin} min after a good fetch uses ${expected === "calendly" ? "that recent Calendly result" : "the .ics link"}`, async () => {
+      const { db } = fakeDb();
+      const env = { DB: db, CALENDLY_TOKEN: TOKEN, CALENDLY_USER_URI: USER, OUTLOOK_ICS_URL: ICS_URL };
+      const then = NOW - ageMin * 60000;
+      await refreshCalendlyBusy(db, env, then, fakeNet({ items: [] }).f);
+      const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const r = await publishedBusy(env, NOW, fakeNet({ ics: ICS_ONE, calendly: () => new Response("{}", { status: 503 }) }).f);
+      expect(r?.source).toBe(expected);
+      if (expected === "calendly") expect(r?.fetched).toBe(then);
+      err.mockRestore();
+    });
+  }
+
   it("throws (page shows 'temporarily unavailable') when both sources fail", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const net = fakeNet({ calendly: () => new Response("{}", { status: 500 }) }); // .ics link returns 404

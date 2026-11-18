@@ -16,8 +16,10 @@
   // Reminder emails: every 30 minutes, send for calls starting within 24 hours.
   "triggers": { "crons": ["*/30 * * * *"] },
   "vars": { "TENANT": "alderlux", "SMTP_HOST": "mail.privateemail.com", "SMTP_PORT": "465", "SMTP_SECURE": "on", "SMTP_USER": "admin@alderlux.com", "PUBLIC_BASE_URL": "https://alderlux-booking.rob-h-masons.workers.dev",
-    "GOOGLE_CALENDAR_ID": "0022d72a1996735ab6e22ad9f504bbef758627a65c3ef29cef5bbb2e02d2aa99@group.calendar.google.com" },
+    "GOOGLE_CALENDAR_ID": "0022d72a1996735ab6e22ad9f504bbef758627a65c3ef29cef5bbb2e02d2aa99@group.calendar.google.com",
+    // Calendly host user (not secret). Busy times come from Calendly when the CALENDLY_TOKEN secret is set.
+    "CALENDLY_USER_URI": "https://api.calendly.com/users/e2f3324d-8d98-49a6-8a14-070bb1a86674" },
   // Emails go from admin@alderlux.com via Namecheap Private Email (SMTP, port 465). Outlook is used for
-  // the calendar only. Secrets: SMTP_PASS, MS_CLIENT_ID, MS_CLIENT_SECRET, ADMIN_KEY (see README).
+  // the calendar only. Secrets: SMTP_PASS, MS_CLIENT_ID, MS_CLIENT_SECRET, ADMIN_KEY, OUTLOOK_ICS_URL, CALENDLY_TOKEN (see README).
   "observability": { "enabled": true }
 }

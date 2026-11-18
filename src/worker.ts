@@ -11,8 +11,10 @@ import { STATIC } from "./static.generated";
 import { authorizeUrl, checkState, exchangeCode, makeState, outlookAppConfigured, outlookBusy, outlookConnected, outlookCreateEvent, outlookDeleteEvent, safeEqual, type OutlookEnv } from "./outlook";
 import { buildFeed, buildIcs } from "./ics";
 import { cachedIcsBusy, refreshIcsBusy } from "./ics-busy";
+import { CalendarUnavailable, publishedBusy, refreshAllBusy } from "./busy-source";
+import { CALENDLY_CACHE_TTL_MS, lastCalendlyError, readCalendlyCache, refreshCalendlyBusy, type CalendlyEnv } from "./calendly-busy";
 
-export interface Env extends CalendarEnv, OutlookEnv {
+export interface Env extends CalendarEnv, OutlookEnv, CalendlyEnv {
   DB: D1Database;
   ASSETS?: Fetcher;
   EMAIL?: EmailBinding;
@@ -90,22 +92,16 @@ function whenText(ms: number, tz: string): string {
 
 const UNAVAILABLE = () => new Response(JSON.stringify({ error: "Availability is temporarily unavailable. Please try again shortly." }), { status: 503, headers: JSON_HEADERS });
 
-/** Busy periods from Robert's calendar: the published Outlook link (cached), or a connected calendar. */
+/** Busy periods from Robert's calendar: Calendly (cached 5 minutes), else the published Outlook link (cached), or a connected calendar. */
 async function calendarBusy(env: Env, from: number, to: number): Promise<Busy[]> {
-  if (env.OUTLOOK_ICS_URL) {
-    const now = Date.now();
-    let cache = await cachedIcsBusy(env.DB, now);
-    if (!cache) {
-      try {
-        await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, now);
-        cache = await cachedIcsBusy(env.DB, now);
-      } catch (e) {
-        console.error("calendar link refresh failed: " + errText(e));
-      }
-    }
-    if (!cache) throw UNAVAILABLE(); // never offer times we can't check
-    return cache.busy.filter((b) => b.start < to && b.end > from);
+  let published;
+  try {
+    published = await publishedBusy(env, Date.now());
+  } catch (e) {
+    if (e instanceof CalendarUnavailable) throw UNAVAILABLE(); // never offer times we can't check
+    throw e;
   }
+  if (published) return published.busy.filter((b) => b.start < to && b.end > from);
   try {
     return (await outlookConnected(env)) ? await outlookBusy(env, from, to) : await googleBusy(env, from, to);
   } catch (e) {
@@ -307,18 +303,57 @@ async function handleFeed(url: URL, env: Env): Promise<Response> {
   return new Response(buildFeed(`${tenant.name} bookings`, events), { headers: { "content-type": "text/calendar; charset=utf-8", "cache-control": "no-store" } });
 }
 
-async function handleCalendarStatus(url: URL, env: Env): Promise<Response> {
+/**
+ * Admin check of the busy-time sources. Fetches each configured source live, then reports which one
+ * page loads use, when each was last fetched and how many busy periods it holds. No secrets or links.
+ */
+export async function handleCalendarStatus(url: URL, env: Env, now = Date.now(), f: typeof fetch = fetch): Promise<Response> {
   if (!env.ADMIN_KEY || !safeEqual(url.searchParams.get("key") ?? "", env.ADMIN_KEY)) return json({ error: "Not allowed." }, 403);
-  if (!env.OUTLOOK_ICS_URL) return json({ calendarLink: "not set" });
-  const now = Date.now();
-  try {
-    const count = await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, now);
-    const cache = await cachedIcsBusy(env.DB, now);
-    const next = (cache?.busy ?? []).filter((b) => b.end > now).slice(0, 10).map((b) => ({ start: new Date(b.start).toISOString(), end: new Date(b.end).toISOString() }));
-    return json({ calendarLink: "ok", busyPeriodsNext75Days: count, next10: next });
-  } catch (e) {
-    return json({ calendarLink: "error", error: errText(e) });
+  const iso = (ms: number | undefined) => (ms === undefined ? null : new Date(ms).toISOString());
+  const next10 = (busy: Busy[]) => busy.filter((b) => b.end > now).slice(0, 10).map((b) => ({ start: iso(b.start), end: iso(b.end) }));
+
+  let calendly: Record<string, unknown> = { status: "not set" };
+  let calendlyBusy: Busy[] | null = null;
+  if (env.CALENDLY_TOKEN) {
+    const before = await readCalendlyCache(env.DB);
+    try {
+      const count = await refreshCalendlyBusy(env.DB, env, now, f);
+      calendlyBusy = (await readCalendlyCache(env.DB))?.busy ?? [];
+      calendly = { status: "ok", previousFetch: iso(before?.fetched), fetched: iso(now), busyPeriods: count, cacheMinutes: CALENDLY_CACHE_TTL_MS / 60000 };
+    } catch (e) {
+      calendly = { status: "error", error: e instanceof Error ? e.message : String(e), lastGoodFetch: iso(before?.fetched) };
+    }
+    const lastError = await lastCalendlyError(env.DB);
+    if (lastError) calendly.lastError = { at: iso(lastError.at), message: lastError.message };
   }
+
+  let calendarLink: Record<string, unknown> = { status: "not set" };
+  let icsBusy: Busy[] | null = null;
+  if (env.OUTLOOK_ICS_URL) {
+    try {
+      const count = await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, now, f);
+      icsBusy = (await cachedIcsBusy(env.DB, now))?.busy ?? [];
+      calendarLink = { status: "ok", fetched: iso(now), busyPeriods: count };
+    } catch (e) {
+      const before = await cachedIcsBusy(env.DB, now);
+      calendarLink = { status: "error", error: e instanceof Error ? e.message : String(e), lastGoodFetch: iso(before?.fetched) };
+      if (before) icsBusy = before.busy;
+    }
+  }
+
+  // What a page load would use right now.
+  const source = calendlyBusy ? "calendly" : icsBusy ? "ics" : env.CALENDLY_TOKEN || env.OUTLOOK_ICS_URL ? "unavailable" : "connected calendar (Outlook/Google) or none";
+  const active = calendlyBusy ?? icsBusy ?? [];
+  return json({
+    source,
+    checked: iso(now),
+    busyPeriods: active.length,
+    calendly,
+    calendarLink,
+    // Kept for older bookmarks of this page.
+    busyPeriodsNext75Days: active.length,
+    next10: next10(active),
+  });
 }
 
 /** Sends one test email to the host address and shows the mail server conversation (password redacted). */
@@ -441,7 +476,7 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    if (env.OUTLOOK_ICS_URL) await refreshIcsBusy(env.DB, env.OUTLOOK_ICS_URL, Date.now()).catch((e) => console.error("calendar link refresh failed: " + errText(e)));
+    await refreshAllBusy(env, Date.now());
     await runReminders(env, Date.now());
   },
 } satisfies ExportedHandler<Env>;

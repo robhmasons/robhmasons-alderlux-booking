@@ -10,16 +10,44 @@ Built to host more than one business (`tenant`), starting with Alderlux only.
 - Double booking is impossible: the database insert refuses any overlap in a single statement (tested with 5 simultaneous requests).
 - **All emails come from admin@alderlux.com**, sent through alderlux.com's own mail server (Namecheap Private Email) using that mailbox's login: client confirmation with a calendar file attached, a notice to admin@alderlux.com, cancellations (with a calendar cancellation file) and a reminder 24 hours before.
 - **Outlook is calendar-only** (Microsoft Graph): it checks Robert's Outlook calendar for busy times, adds each booking to it and removes cancelled ones. Events have no attendees and the app has no mail permission, so Outlook never emails anyone. Google Calendar is supported as an alternative.
+- **Busy times come from Calendly first** (Calendly reads Robert's Outlook calendar live), so a new Outlook entry reaches the booking page within about 5 minutes. The published Outlook calendar link (`OUTLOOK_ICS_URL`) is the fallback. See "Busy times" below.
 - If the calendar can't be read, the page shows "temporarily unavailable" rather than offering times that may clash.
 - Brand: near-black ground, gold, Satoshi, approved footer verbatim. No trackers, one font host.
 
 ## Run and test
 ```
 npm install
-npm test               # 28 unit tests (slots, clock changes, validation, calendar file, Google adapter, emails)
+npm test               # 82 unit tests (slots, clock changes, validation, calendar file, Google adapter, emails, Calendly busy times)
 npm run typecheck
 npm run e2e            # 18 end-to-end checks against a local Worker and local D1
 ```
+
+## Busy times
+Where Robert's busy times come from, in order:
+1. **Calendly** (when the `CALENDLY_TOKEN` secret is set). The Worker asks Calendly for every busy period from now to 75 days ahead (11 requests of up to 7 days each, two at a time), using Calendly's buffered times where it gives them. The result is kept in D1 (`settings`, key `calendly_busy_cache`) for 5 minutes (`CALENDLY_CACHE_TTL_MS` in `src/calendly-busy.ts`), so a page load after that fetches again. The 30-minute job also refreshes it.
+2. **The published Outlook calendar link** (`OUTLOOK_ICS_URL`), cached for up to 3 hours (key `ics_busy_cache`). Used only if Calendly fails (network error, 401, 429, 5xx or an unreadable reply). The failure is logged and recorded (key `calendly_last_error`). The 30-minute job keeps this cache warm too.
+3. If a source is set but none can be read, the page shows "Availability is temporarily unavailable" and no times are offered.
+
+The Worker's own bookings are always added on top, and the usual rules (30-minute gap either side, 12 hours' notice, working hours) apply to every busy period whatever its source. Calendly's busy times include meetings booked through Calendly itself; that is expected.
+
+Calendly only returns Outlook entries if Outlook is set to "Check for conflicts" in Calendly (in Calendly's calendar connection settings).
+
+### Add the Calendly token (one time)
+1. In Calendly: Integrations > API and webhooks > Personal access tokens > Generate new token (menu names may differ slightly). Give it a name such as "Alderlux booking (busy times)". If scopes are offered, read access to availability (`availability:read`) is enough. Copy it once; Calendly does not show it again.
+2. `npx wrangler secret put CALENDLY_TOKEN` and paste the token when asked. Never put it in `wrangler.jsonc`, a commit or a chat. Setting a secret applies to the live Worker straight away.
+3. The host's Calendly user is the plain variable `CALENDLY_USER_URI` in `wrangler.jsonc` (not secret). If it is removed, the Worker looks it up from the token.
+4. To stop using Calendly, `npx wrangler secret delete CALENDLY_TOKEN`; the Worker goes back to the calendar link alone.
+
+If the token is revoked or stops working, the page falls back to the calendar link, and the status page below shows `"Calendly returned 401"`.
+
+### Check status
+Open `https://<worker-url>/admin/calendar-status?key=<ADMIN_KEY>`. It fetches each source live and shows:
+- `source`: what page loads use now (`calendly`, `ics`, or `unavailable`);
+- `calendly`: `status` (`ok`, `error` or `not set`), `fetched`, `previousFetch`, `busyPeriods`, and `lastError` (when and why Calendly last failed);
+- `calendarLink`: the same for the Outlook link;
+- `next10`: the next ten busy periods from the source in use.
+
+It shows no token, link or other secret. Worker logs (`npx wrangler tail`) show `Calendly busy times failed, using the calendar link instead: ...` whenever the fallback is used.
 
 ## Cost: £0
 Everything runs on Cloudflare's **free** Workers plan. Measured: a 14-day availability lookup takes about 1 ms of processing (free limit 10 ms per request). Free limits that apply: 100,000 requests a day; D1 5 million rows read and 100,000 written a day, 5 GB stored. Alderlux's volume is a tiny fraction of these. Email goes through the existing admin@alderlux.com mailbox, not Cloudflare's paid email service.

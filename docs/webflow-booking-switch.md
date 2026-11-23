@@ -5,9 +5,9 @@ Robert makes both edits in Webflow, checks the staging site, then publishes.
 
 ## What uses Calendly today (checked on the live site, 63 pages)
 
-1. **Every page** (checked on staging 06/11/2026: no element has the class `book-call`; every "Book a call" button links to /alderluxcontact, so the contact page calendar is the only booking route): Site settings → Custom code → Footer has a script that opens a Calendly
+1. **Every page** (checked on staging 06/11/2026: no element has the class `book-call`; every "Book a call" button links to /contact (was /alderluxcontact until 20/11/2026), so the contact page calendar is the only booking route): Site settings → Custom code → Footer has a script that opens a Calendly
    pop-up (the-edge-introductory-call-clone) when any element with the class `book-call` is clicked.
-2. **Contact page** (/alderluxcontact): an Embed element in "Option One — Book A Free Consultation"
+2. **Contact page** (/contact (was /alderluxcontact until 20/11/2026)): an Embed element in "Option One — Book A Free Consultation"
    holds an inline Calendly calendar.
 
 ## Edit 1 — Site settings → Custom code → Footer code

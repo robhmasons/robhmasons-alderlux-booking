@@ -20,6 +20,9 @@ export interface EventType {
   // Existing clients only: not listed on the public booking page (reached by its own link),
   // asks no questions and shows no mailing-list box.
   clientOnly?: boolean;
+  // Private: never listed on the booking page or returned by /api/config unless asked for by its
+  // own slug (?type=<slug>), and then shown alone. No mailing-list box. Robert, 26/11/2026.
+  privateOnly?: boolean;
 }
 
 export interface Tenant {
@@ -151,6 +154,23 @@ export const TENANTS: Record<string, Tenant> = {
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [],
         clientOnly: true,
+      },
+      {
+        // Robert, 26/11/2026: Private Client has its own booking page, alderlux.com/private-client-booking,
+        // and this call appears nowhere else. Wording cleared by the Alderlux compliance gate.
+        slug: "private-client",
+        name: "Private Client: a private conversation",
+        description: "A private 60-minute conversation with Robert Hughes about Private Client.",
+        durationMin: 60,
+        location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
+        questions: [
+          meetingFormat,
+          { id: "assets", label: "Which kinds of digital assets do you hold?", type: "select", options: ["Bitcoin only", "Bitcoin and altcoins", "Altcoins or memecoins", "A mix of all of these", "Not yet"] },
+          { id: "family", label: "Would family members be involved?", type: "select", options: ["No", "Yes", "Not sure yet"] },
+          { id: "settle", label: "What would you most like to understand or have settled?", type: "textarea" },
+          heardAbout,
+        ],
+        privateOnly: true,
       },
     ],
   },

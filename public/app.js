@@ -46,12 +46,15 @@
   }
 
   async function init() {
-    state.config = await api("/api/config");
+    const pre = new URLSearchParams(location.search).get("type");
+    state.config = await api("/api/config" + (pre ? "?type=" + encodeURIComponent(pre) : ""));
     const list = $("types");
     // Public calls first; calls for existing clients last, marked as such.
-    const ordered = [...state.config.eventTypes.filter((x) => !x.clientOnly), ...state.config.eventTypes.filter((x) => x.clientOnly)];
+    const ordered = [...state.config.eventTypes.filter((x) => !x.clientOnly && !x.privateOnly), ...state.config.eventTypes.filter((x) => x.clientOnly && !x.privateOnly)];
+    // A private call (asked for by its own slug) is shown alone and opened straight away.
+    const priv = state.config.eventTypes.find((x) => x.privateOnly && x.slug === pre);
+    if (priv) { $("step-type").hidden = true; document.querySelector('[data-back="type"]').hidden = true; return chooseType(priv); }
     // ?type=<slug> highlights that call; every call stays on show and the visitor still chooses.
-    const pre = new URLSearchParams(location.search).get("type");
     for (const t of ordered) {
       const suggested = t.slug === pre;
       const cls = ["card", t.clientOnly ? "members" : "", suggested ? "suggested" : ""].filter(Boolean).join(" ");
@@ -145,7 +148,7 @@
       if (saved && !f.elements.name.value) f.elements.name.value = saved.name || "";
       if (saved && !f.elements.email.value) f.elements.email.value = saved.email || "";
     } catch (e) { /* storage unavailable: nothing to prefill */ }
-    const lbl = state.type.clientOnly ? null : state.config.mailingListLabel;
+    const lbl = state.type.clientOnly || state.type.privateOnly ? null : state.config.mailingListLabel;
     $("subscribe-row").hidden = !lbl;
     if (lbl) $("subscribe-label").textContent = lbl;
     $("form-error").textContent = "";

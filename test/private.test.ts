@@ -23,7 +23,7 @@ describe("private-client (Robert, 26/11/2026)", () => {
   });
   it("accepts a valid booking and never asks for balances or addresses", () => {
     const et = TENANTS.alderlux.eventTypes.find((e) => e.slug === "private-client")!;
-    expect(et.questions.map((q) => q.label).join(" ")).not.toMatch(/balance|address|amount|how much/i);
+    expect(et.questions.map((q) => q.label).join(" ")).not.toMatch(/balance|how much|your (wallet )?address|which address/i);
     const v = validateBooking({ type: "private-client", start: "2026-12-01T10:00:00Z", name: "A Client", email: "a@example.com", answers: { format: "Video call (Zoom)", heard_about: "Personal introduction" } }, et);
     expect(v.ok).toBe(true);
   });

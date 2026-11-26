@@ -165,7 +165,7 @@ export const TENANTS: Record<string, Tenant> = {
         location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
         questions: [
           meetingFormat,
-          { id: "assets", label: "Which kinds of digital assets do you hold?", type: "select", options: ["Bitcoin only", "Bitcoin and other digital assets", "Other digital assets only", "Prefer to discuss on the call"] },
+          { id: "assets", label: "Which kinds of digital assets do you hold?", type: "select", options: ["Bitcoin only", "Bitcoin and other digital assets", "Other digital assets only", "None", "Prefer to discuss on the call"] },
           { id: "family", label: "Would family members be involved?", type: "select", options: ["No", "Yes", "Not sure yet"] },
           { id: "understand", label: "What would you most like to understand? Please leave out amounts, wallet addresses and account details.", type: "textarea" },
           heardAbout,

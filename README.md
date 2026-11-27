@@ -56,6 +56,7 @@ Everything runs on Cloudflare's **free** Workers plan. Measured: a 14-day availa
 1. `npx wrangler login`
 2. `npx wrangler d1 create alderlux-booking`, paste the ID into `wrangler.jsonc`, then `npx wrangler d1 migrations apply alderlux-booking --remote`.
 3. `npx wrangler deploy`. Note the Worker URL (or attach `book.alderlux.com`).
+   - From a Claude cloud session, `wrangler deploy` fails at the assets upload (401: the proxy replaces the upload token). Use the API route instead: `npm run build` (embeds public/ and bundles to dist/worker.js), then PUT dist/worker.js to `/accounts/<id>/workers/scripts/alderlux-booking` as a module, with metadata `compatibility_date` 2025-10-01, `keep_bindings` [secret_text, plain_text, d1] and observability on. That keeps the secrets, D1 and the cron. Used 26/11 and 27/11/2026.
 4. Register a free Microsoft app (one time): Microsoft Entra admin centre, App registrations, New registration.
    - Supported account types: include personal Microsoft accounts (Outlook.com).
    - Redirect URI (Web): `https://<worker-url>/oauth/outlook/callback`.

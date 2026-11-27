@@ -113,8 +113,24 @@ export const TENANTS: Record<string, Tenant> = {
           meetingFormat,
           { id: "goal", label: "What would you most like to understand or be able to do?", type: "textarea" },
           { id: "held_for", label: "How long have you held crypto?", type: "select", options: ["None yet", "Under 1 year", "1–5 years", "Over 5 years"] },
-          { id: "assets", label: "Which crypto do you hold, if any? (for example Bitcoin, XRP, Ethereum)", type: "text" },
+          { id: "assets", label: "Do you hold any Bitcoin or other digital assets yet? It is fine if not.", type: "text" },
           { id: "held_how", label: "How do you hold it now?", type: "select", options: ["Exchange", "My own wallet", "Both", "Not yet"] },
+          heardAbout,
+        ],
+      },
+      {
+        // Robert, 27/11/2026 (two-door review, item 14): a plain call for people new to Bitcoin.
+        // Default on alderlux.com/bitcoin-for-beginners-uk. Wording cleared by the Alderlux compliance gate (C7).
+        slug: "start-here",
+        name: "New to Bitcoin: introductory conversation",
+        description: "A free 60-minute conversation for anyone new to Bitcoin. No knowledge needed and no need to own any. We start with how it works and how scams work, and you decide what happens next. If you have lost money to a scam, Report Fraud and your bank are the first contacts.",
+        durationMin: 60,
+        location: "Zoom, or in person at Adelphi Mill, Grimshaw Lane, Bollington, SK10 5JB",
+        questions: [
+          meetingFormat,
+          { id: "curious", label: "What made you curious about Bitcoin?", type: "textarea" },
+          { id: "worries", label: "Has anything worried you, such as scams?", type: "textarea" },
+          { id: "own_any", label: "Do you own any yet? It is fine if not.", type: "select", options: ["Not yet", "A little", "Yes", "Prefer to discuss on the call"] },
           heardAbout,
         ],
       },
